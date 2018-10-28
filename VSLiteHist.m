@@ -145,6 +145,10 @@ end
 %%% check input params %%%
 if isempty(P) && isempty(M); throw(MException('VSLiteHist:VSLiteHist', 'neither P and M is set')); end
 if isempty(phi) && isempty(gE); throw(MException('VSLiteHist:VSLiteHist', 'neither phi and gE is set')); end
+%%% specify a negative I_0 means we use previous year's data. as we skipped
+%%% 0 here (I_0=1 for first month of current year, while I_0=-1 for last
+%%% month of previous year), we increase negative I_0 by 1.
+if I_0<0; I_0=I_0+1; end
 %%% Pre-allocate storage for outputs: %%%%
 Gr = NaN(12,nyrs);
 gT = NaN(12,nyrs);
@@ -174,69 +178,31 @@ end
 %%%%%%%%%%%%%%%%
 % syear = start (first) year of simulation
 % eyear = end (last) year of simulation
-% cyear = year the model is currently working on
-% iyear = index of simulation year
 % Compute monthly growth response to T & M, and overall growth response G:
-for cyear=1:length(iyear)      % begin cycling over years
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    for t = 1:12  % begin cycling over months in a year
-        %%% Calculate Growth Response functions gT(t) and gM(t)
-        % First, temperature growth response:
-        x = T(t,cyear);
-        if (x < T1)
-            gT(t,cyear) = 0;
-        elseif (x >= T1) && (x <= T2)
-            gT(t,cyear) = (x - T1)/(T2 - T1);
-        elseif (x >= T2)
-            gT(t,cyear) = 1;
-        end
-        % Next, Soil moisture growth response:
-        x = M(t,cyear);
-        if (x < M1)
-            gM(t,cyear) = 0;
-        elseif (x >= M1) && (x <= M2)
-            gM(t,cyear) = (x - M1)/(M2 - M1);
-        elseif (x >= M2)
-            gM(t,cyear) = 1;
-        end
-    end % end month (t) cycle
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Compute overall growth rate:
-    Gr(:,cyear) = gE.*min(gT(:,cyear),gM(:,cyear));
-end % end year cycle
+gT(T<T1) = 0;
+gT(T>T2) = 1;
+gT((T>=T1)&(T<=T2)) = (T((T>=T1)&(T<=T2))-T1)/(T2-T1);
+gM(M<M1) = 0;
+gM(M>M2) = 1;
+gM((M>=M1)&(M<=M2)) = (M((M>=M1)&(M<=M2))-M1)/(M2-M1);
+Gr = diag(gE)*min(gT,gM);
 %%%%%%%%%%%%%% Compute proxy quantity from growth responses %%%%%%%%%%%%%%%
-width = NaN*ones(length(syear:eyear),1);
+trwidth = NaN*ones(length(syear:eyear),1);
 if phi>0 % if site is in the Northern Hemisphere:
-    if I_0<0; % if we include part of the previous year in each year's modeled growth:
-        startmo = 13+I_0;
-        endmo = I_f;
-        % use average of growth data across modeled years to estimate first year's growth due
-        % to previous year:
-        width(1) = sum(Gr(1:endmo,1)) + sum(mean(Gr(startmo:12,:),2));
-        for cyear = 2:length(syear:eyear)
-            width(cyear) = sum(Gr(startmo:12,cyear-1)) + sum(Gr(1:endmo,cyear));
-        end
-    else % no inclusion of last year's growth conditions in estimates of this year's growth:
-        startmo = I_0+1;
-        endmo = I_f;
-        for cyear = 1:length(syear:eyear)
-            width(cyear) = sum(Gr(startmo:endmo,cyear));
-        end
-    end
+    Grstack = [NaN(12,1),Gr(:,1:end-1);Gr];
+    Grstack(isnan(Grstack(:,1)),1) = mean( Grstack(isnan(Grstack(:,1)),2:end), 2 );
+    startmo = 12+I_0;
+    endmo = 12+I_f;
 elseif phi<0 % if site is in the Southern Hemisphere:
+    Grstack = [Gr;Gr(:,2:end),NaN(12,1)];
+    Grstack(isnan(Grstack(:,1)),end) = mean( Grstack(isnan(Grstack(:,1)),1:end-1), 2 );
     % (Note: in the Southern Hemisphere, ring widths are dated to the year in which growth began!)
-    startmo = 7+I_0; % (eg. I_0 = -4 in SH corresponds to starting integration in March of cyear)
-    endmo = I_f-6; % (eg. I_f = 12 in SH corresponds to ending integraion in June of next year)
-    for cyear = 1:length(syear:eyear)-1
-        width(cyear) = sum(Gr(startmo:12,cyear)) + sum(Gr(1:endmo,cyear+1));
-    end
-    % use average of growth data across modeled years to estimate last year's growth due
-    % to the next year:
-    width(length(syear:eyear)) = sum(Gr(startmo:12,length(syear:eyear)))+...
-        sum(mean(Gr(1:endmo,:),2));
+    startmo = 6+I_0; % (eg. I_0 = -4 in SH corresponds to starting integration in March of cyear)
+    endmo = 6+I_f; % (eg. I_f = 12 in SH corresponds to ending integraion in June of next year)
 end
+trwidth = sum(Grstack(startmo:endmo,:));
 %
-trw = ((width-mean(width))/std(width))'; % proxy series is standardized width.
+trw = ((trwidth-mean(trwidth))/std(trwidth))'; % proxy series is standardized width.
 %
 if nargout >=1
     varargout(1) = {gT};
@@ -244,9 +210,9 @@ if nargout >=1
     varargout(3) = {gE};
     varargout(4) = {M};
     varargout(5) = {potEv};
-    varargout{6} = {width};
-    varargout{7} = {mean(width)};
-    varargout{8} = {std(width)};
+    varargout{6} = {trwidth};
+    varargout{7} = {mean(trwidth)};
+    varargout{8} = {std(trwidth)};
 end
 %
 end
