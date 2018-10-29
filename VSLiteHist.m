@@ -1,4 +1,4 @@
-function [trw,varargout] = VSLiteHist(syear,eyear,T1,T2,M1,M2,varargin)
+function [trw,varargout] = VSLiteHist(syear,eyear,varargin)
 % VSLite_v2_3.m - Simulate tree ring width index given monthly climate inputs.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Basic Usage:
@@ -12,25 +12,23 @@ function [trw,varargout] = VSLiteHist(syear,eyear,T1,T2,M1,M2,varargin)
 % Basic Inputs:
 %   syear = start year of simulation.
 %   eyear = end year of simulation.
-%   phi = latitude of site (in degrees N)
-%   T1 = scalar temperature threshold below which temp. growth response is zero (in deg. C)
-%   T2 = scalar temperature threshold above which temp. growth response is one (in deg. C)
-%   M1 = scalar soil moisture threshold below which moist. growth response is zero (in v/v)
-%   M2 = scalar soil moisture threshold above which moist. growth response is one (in v/v)
-%     (Note that optimal growth response parameters T1, T2, M1, M2 may be estimated
-%      using code estimate_vslite_params_v2_3.m also freely available at
-%      the NOAA NCDC Paleoclimatology software library.)
 %
 % Advanced Inputs (must be specified as property/value pairs):
+%   'T1':        scalar temperature threshold below which temp. growth response is zero (in deg. C)
+%   'T2':        scalar temperature threshold above which temp. growth response is one (in deg. C)
+%   'M1':        scalar soil moisture threshold below which moist. growth response is zero (in v/v)
+%   'M2':        scalar soil moisture threshold above which moist. growth response is one (in v/v)
+%                (Note that optimal growth response parameters T1, T2, M1, M2 may be estimated
+%                 using code estimate_vslite_params_v2_3.m also freely available at
+%                 the NOAA NCDC Paleoclimatology software library.)
 %   'T':         (12 x Nyrs) matrix of ordered mean monthly temperatures 
 %                (in degEes C) (required)
 %   'P':         (12 x Nyrs) matrix of ordered accumulated monthly precipi-
 %                tation (in mm) (required if 'M' is absent)
 %   'M':         (12 x Nyrs) matrix of ordered calculated monthly moisture
 %                (required if 'P' is absent)
-%   'phi':       latitude of site (in degrees N) (required if 'gE' is absent)
-%   'gE':        calculated monthly growth response of insolation (required
-%                set if phi is absent)
+%   'phi':       latitude of site (in degrees N) (required)
+%   'gE':        calculated monthly growth response of insolation
 %   'lbparams':  Parameters of the Leaky Bucket model of soil moisture.
 %                These may be specified in an 8 x 1 vector in the following
 %                order (otherwise the default values are read in):
@@ -93,6 +91,10 @@ nyrs = length(syear:eyear);
 if nargin > 6
     %%%% First fill parameter values in with defaults: %%%%%
     % Parameters of the Leaky Bucket model:
+    T1 = [];
+    T2 = [];
+    M1 = [];
+    M2 = [];
     T = [];
     P = [];
     M = [];
@@ -115,6 +117,14 @@ if nargin > 6
         namein = varargin{2*(i-1)+1};
         valin = varargin{2*i};
         switch namein
+            case 'T1'
+                T1 = valin;
+            case 'T2'
+                T2 = valin;
+            case 'M1'
+                M1 = valin;
+            case 'M2'
+                M2 = valin;
             case 'T'
                 T = valin;
             case 'P'
@@ -150,7 +160,6 @@ if isempty(phi) && isempty(gE); throw(MException('VSLiteHist:VSLiteHist', 'neith
 %%% month of previous year), we increase negative I_0 by 1.
 if I_0<0; I_0=I_0+1; end
 %%% Pre-allocate storage for outputs: %%%%
-Gr = NaN(12,nyrs);
 gT = NaN(12,nyrs);
 gM = NaN(12,nyrs);
 potEv = NaN(12,nyrs);
@@ -187,7 +196,6 @@ gM(M>M2) = 1;
 gM((M>=M1)&(M<=M2)) = (M((M>=M1)&(M<=M2))-M1)/(M2-M1);
 Gr = diag(gE)*min(gT,gM);
 %%%%%%%%%%%%%% Compute proxy quantity from growth responses %%%%%%%%%%%%%%%
-trwidth = NaN*ones(length(syear:eyear),1);
 if phi>0 % if site is in the Northern Hemisphere:
     Grstack = [NaN(12,1),Gr(:,1:end-1);Gr];
     Grstack(isnan(Grstack(:,1)),1) = mean( Grstack(isnan(Grstack(:,1)),2:end), 2 );

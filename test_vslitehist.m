@@ -32,12 +32,12 @@ phi = sitecoords(site,1);
 
 % estimate the climate response parameters:
 disp('Performing Bayesian estimation of VS-Lite parameters for chosen site.')
-% [T1,T2,M1,M2] = estimate_vslitehist_params(trw_obs(:,site)','T',T,'P',P,'phi',phi,'nsamp',2000,'gparpriors','uniform');
-% save('vslitehist_params.mat', 'T1','T2','M1','M2');
-load('vslitehist_params.mat');
+[T1,T2,M1,M2] = estimate_vslitehist_params(trw_obs(:,site)','T',T,'P',P,'phi',phi,'nsamp',2000,'gparpriors','uniform');
+save('vslitehist_params.mat', 'T1','T2','M1','M2');
+% load('vslitehist_params.mat');
 
 % Run VS-Lite.
-[trw,gT,gM,gE,M] = VSLiteHist(syear,eyear,T1,T2,M1,M2,'phi',phi,'T',T,'P',P);
+[trw,gT,gM,gE,M] = VSLiteHist(syear,eyear,'T1',T1,'T2',T2,'M1',M1,'M2',M2,'phi',phi,'T',T,'P',P);
 % Draw some output.
 figure;
 set(gcf,'units','normalized','position',[.25 .25 .5 .4])

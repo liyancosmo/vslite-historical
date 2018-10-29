@@ -1,4 +1,4 @@
-function [T1,T2,M1,M2,varargout] = estimate_vslitehist_params(RW,varargin)
+function [T1,T2,M1,M2,varargout] = estimate_vslitehist_params1(RW,varargin)
 % Given calibration-interval temperature, precipitation, and ring-width data,
 % and site latitude, estimate_vslite_params_v2_3.m performes a Bayesian parameter
 % estimation of the growth response parameters T1, T2, M1 and M2. The
@@ -205,6 +205,7 @@ if isempty(phi) && isempty(gE); throw(MException('VSLiteHist:estimate_params', '
 %
 % Take zscore of RW data to fulfill assumptions of model error/noise structure
 RW = zscore(RW);
+Gterms_dist = NaN(size(T));
 %
 % Compute soil moisture:
 Mmax =.76; % maximum soil moisture; v/v
@@ -236,6 +237,7 @@ Ttchains = NaN(nsamp+nbi, nchain); Ttensemb = NaN(1, nsamp*nchain);
 Tochains = NaN(nsamp+nbi, nchain); Toensemb = NaN(1, nsamp*nchain);
 Mtchains = NaN(nsamp+nbi, nchain); Mtensemb = NaN(1, nsamp*nchain);
 Mochains = NaN(nsamp+nbi, nchain); Moensemb = NaN(1, nsamp*nchain);
+Gterms_distchains = NaN([size(T), nsamp+nbi, nchain]); Gterms_distensemb = NaN([size(T), nsamp*nchain]);
 if errormod == 0
     sig2rwchains = NaN(nsamp+nbi, nchain); sig2rwensemb = NaN(1, nsamp*nchain);
 elseif errormod == 1
@@ -255,6 +257,8 @@ for chain = 1:nchain
             ' out of ' num2str(nchain) '...']); end
     %
     % Initialize the MCMC:
+    gT = NaN(size(T));
+    gM = NaN(size(M));
     sim = 1;
     %
     % Initialize growth response parameters:
@@ -264,8 +268,16 @@ for chain = 1:nchain
     % Initialize Mt and Mo with draws from priors:
     Mt(sim) = unifrnd(aM1,bM1);
     Mo(sim) = unifrnd(aM2,bM2);
-    % Initialize paramscurr
-    paramscurr = struct('T1',Tt(sim),'T2',To(sim),'M1',Mt(sim),'M2',Mo(sim));
+    %
+    gT(T<Tt(sim)) = 0;
+    gT(T>To(sim)) = 1;
+    gT(T>Tt(sim)&T<To(sim)) = (T(T>Tt(sim)&T<To(sim))-Tt(sim))/(To(sim)-Tt(sim));
+    %
+    gM(M<Mt(sim)) = 0;
+    gM(M>Mo(sim)) = 1;
+    gM(M>Mt(sim)&M<Mo(sim)) = (M(M>Mt(sim)&M<Mo(sim))-Mt(sim))/(Mo(sim)-Mt(sim));
+    %
+    Gterms = min(gM,gT).*repmat(gE,1,size(T,2));
     %
     sim = sim+1;
     %
@@ -292,33 +304,48 @@ for chain = 1:nchain
         errorpars(1) = phi1(1); errorpars(2) = tau2(1);
     end
     %
-    Gterms = VSLiteHist(1,Nyrs,...
-        'T1',paramscurr.T1,'T2',paramscurr.T2,...
-        'M1',paramscurr.M1,'M2',paramscurr.M2,...
-        'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
-    %
     while sim < nsamp+nbi+1
         %
-        [Tt(sim),Gterms] = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,gparscalint,'gcurr',Gterms);
-        paramscurr.T1 = Tt(sim);
+        Tt(sim) = Tt_U_aux(Tt(sim-1),T,To(sim-1),gM,RW',errorpars,...
+            gE,Gterms,aT1,bT1,intwindow,gparscalint);
+        gT(T<Tt(sim)) = 0;
+        gT(T>To(sim-1)) = 1;
+        gT(T>Tt(sim)&T<To(sim-1)) = (T(T>Tt(sim)&T<To(sim-1))-Tt(sim))/(To(sim-1)-Tt(sim));
+        Gterms = min(gM,gT).*repmat(gE,1,size(T,2));
         %
-        [To(sim),Gterms] = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,gparscalint,'gcurr',Gterms);
-        paramscurr.T2 = To(sim);
+        tic;
+        To(sim) = To_U_aux(To(sim-1),T,Tt(sim),gM,RW',errorpars,...
+            gE,Gterms,aT2,bT2,intwindow,gparscalint);
+        gT(T<Tt(sim)) = 0;
+        gT(T>To(sim)) = 1;
+        gT(T>Tt(sim)&T<To(sim)) = (T(T>Tt(sim)&T<To(sim))-Tt(sim))/(To(sim)-Tt(sim));
+        Gterms = min(gM,gT).*repmat(gE,1,size(T,2));
+        toc
         %
-        [Mt(sim),Gterms] = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,gparscalint,'gcurr',Gterms);
-        paramscurr.M1 = Mt(sim);
+        Mt(sim) = Mt_U_aux(Mt(sim-1),M,Mo(sim-1),gT,RW',errorpars,...
+            gE,Gterms,aM1,bM1,intwindow,gparscalint);
+        gM(M<Mt(sim)) = 0;
+        gM(M>Mo(sim-1)) = 1;
+        gM(M>Mt(sim)&M<Mo(sim-1)) = (M(M>Mt(sim)&M<Mo(sim-1))-Mt(sim))/(Mo(sim-1)-Mt(sim));
+        Gterms = min(gM,gT).*repmat(gE,1,size(T,2));
         %
-        [Mo(sim),Gterms] = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,gparscalint,'gcurr',Gterms);
-        paramscurr.M2 = Mo(sim);
+        Mo(sim) = Mo_U_aux(Mo(sim-1),M,Mt(sim),gT,RW',errorpars,...
+            gE,Gterms,aM2,bM2,intwindow,gparscalint);
+        gM(M<Mt(sim)) = 0;
+        gM(M>Mo(sim)) = 1;
+        gM(M>Mt(sim)&M<Mo(sim)) = (M(M>Mt(sim)&M<Mo(sim))-Mt(sim))/(Mo(sim)-Mt(sim));
+        Gterms = min(gM,gT).*repmat(gE,1,size(T,2));
+        %
+        Gterms_dist(:,:,sim) = Gterms; 
         %
         % Now draw from error model parameters:
         if errormod == 0
             [errorpars,logLdata(sim)] = ...
-                errormodel0_aux(errorpars,paramscurr,RW,T,M,phi,gE,intwindow,eparscalint,'gcurr',Gterms);
+                errormodel0_aux(errorpars,RW,Gterms,intwindow,eparscalint);
             sigma2w(sim) = errorpars;
         elseif errormod == 1
             [errorpars,logLdata(sim)] = ...
-                errormodel1_aux(errorpars,paramscurr,RW,T,M,phi,gE,intwindow,eparscalint,'gcurr',Gterms);
+                errormodel1_aux(errorpars,RW,Gterms,intwindow,eparscalint);
             phi1(sim) = errorpars(1);
             tau2(sim) = errorpars(2);
         end
@@ -332,6 +359,7 @@ for chain = 1:nchain
     Tochains(:,chain) = To; Toensemb(1,(chain-1)*nsamp+(1:nsamp)) = To(nbi+1:end);
     Mtchains(:,chain) = Mt; Mtensemb(1,(chain-1)*nsamp+(1:nsamp)) = Mt(nbi+1:end);
     Mochains(:,chain) = Mo; Moensemb(1,(chain-1)*nsamp+(1:nsamp)) = Mo(nbi+1:end);
+    Gterms_distchains(:,:,:,chain) = Gterms_dist; Gterms_distensemb(:,:,(chain-1)*nsamp+(1:nsamp)) = Gterms_dist(:,:,nbi+1:end);
     if errormod == 0
         sig2rwchains(:,chain) = sigma2w; sig2rwensemb(1,(chain-1)*nsamp+(1:nsamp)) = sigma2w(nbi+1:end);
     elseif errormod == 1
@@ -404,9 +432,11 @@ if nargout > 0
     varargout{5} = Rhats; varargout{6} = convwarning;
     if errormod == 0
         varargout{7} = sig2rw; varargout{8} = sig2rwensemb;
+        varargout{9} = Gterms_distensemb;
     elseif errormod == 1
         varargout{7} = phi1hat; varargout{8} = tau2hat;
         varargout{9} = phi1ensemb; varargout{10} = tau2ensemb;
+        varargout{11} = Gterms_distensemb;
     end
 end
 %
@@ -414,29 +444,14 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%% CONDITIONAL PARAMETER SAMPLING SUBROUTINES %%%%%%%%%%%
-function [paramval,gval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,cyrs,varargin)
-% initialize and get optional arguments
-nvarargin = length(varargin);
-gcurr = [];
-for i = 1:nvarargin
-    varval = varargin{i};
-    if ischar(varval)
-        switch varval
-            case 'gcurr'
-                i=i+1; gcurr = varargin{i};
-        end
-    end
-end
-%
+function [paramval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,T,M,phi,gE,intwindow,cyrs)
 syear = cyrs(1);
 eyear = cyrs(end);
 %
-if isempty(gcurr)
-    gcurr = VSLiteHist(syear,eyear,...
-        'T1',paramscurr.T1,'T2',paramscurr.T2,...
-        'M1',paramscurr.M1,'M2',paramscurr.M2,...
-        'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
-end
+gcurr = VSLiteHist(syear,eyear,...
+    'T1',paramscurr.T1,'T2',paramscurr.T2,...
+    'M1',paramscurr.M1,'M2',paramscurr.M2,...
+    'T',T,'M',M,'phi',phi,'gE',gE);
 paramsprop = paramscurr;
 paramsprop.(paramname) = unifrnd(boundlower,boundupper);
 gprop = VSLiteHist(syear,eyear,...
@@ -446,8 +461,8 @@ gprop = VSLiteHist(syear,eyear,...
 %
 if length(errorpars) == 1 % White noise error model:
     sigma2rw = errorpars;
-    expcurr = sum((RW(cyrs)'-sqrt(1-sigma2rw)*gcurr).^2);
-    expprop = sum((RW(cyrs)'-sqrt(1-sigma2rw)*gprop).^2);
+    expcurr = sum((RW(cyrs)-sqrt(1-sigma2rw)*gcurr).^2);
+    expprop = sum((RW(cyrs)-sqrt(1-sigma2rw)*gprop).^2);
     HR = exp(-.5*(expprop-expcurr)/sigma2rw);
 elseif length(errorpars) == 2 % AR(1) error model:
     phi1 = errorpars(1); tau2 = errorpars(2);
@@ -455,46 +470,290 @@ elseif length(errorpars) == 2 % AR(1) error model:
     %
     [iSig] = makeAR1covmat(phi1,tau2,length(cyrs));
     %
-    logLprop = -.5*(RW(cyrs)'-sqrt(1-sigma2rw)*gprop)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*gprop);
-    logLcurr = -.5*(RW(cyrs)'-sqrt(1-sigma2rw)*gcurr)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*gcurr);
+    logLprop = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*gprop)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*gprop);
+    logLcurr = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*gcurr)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*gcurr);
     HR = exp(logLprop-logLcurr);
 end
 
 % accept or reject the proposal.
 if binornd(1,min(HR,1))==1
-    paramval = paramsprop.(paramname);
-    gval = gprop;
+    paramval = paramprop;
 else
-    paramval = paramscurr.(paramname);
-    gval = gcurr;
+    paramval = paramcurr;
 end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function [sigma2rw,logLdata] = errormodel0_aux(sigma2rwcurr,paramscurr,RW,T,M,phi,gE,intwindow,cyrs,varargin)
+function [Tt] = Tt_U_aux(Ttcurr,T,To,gM,RW,errorpars,gE,Gterms,att,btt,intwindow,cyrs)
+% gM/gT is the matrix of gM for all the years and all the months of the previous simulation.
+% T is the matrix of temperature for all years and all months of the previous simulation.
+% att is the lower bound on the support of the uniform prior distribution for Tt
+% btt is the upper bound on the support of the uniform prior distribution for Tt
+%
+% SETW 6/10/2010
+Ny = size(Gterms,2);
+I_0 = intwindow(1); I_f = intwindow(2);
+%
+if 1 % Sample from prior as proposal distribution!
+    Ttprop = unifrnd(att,btt);
+    gTprop = NaN*ones(12,Ny);
+    gTprop(T<Ttprop) = 0;
+    gTprop(T>To) = 1;
+    gTprop(T<To&T>Ttprop) = (T(T<To&T>Ttprop)-Ttprop)/(To-Ttprop);
+    gprop = diag(gE)*min(gM,gTprop);
+    gcurr = Gterms;
+    %
+    %%%%%%%%%% account for variable integration window:
+    if I_0<0; % if we include part of the previous year in each year's modeled growth:
+        startmo = 13+I_0;
+        endmo = I_f;
+        prevseas = [mean(gprop(startmo:12,:),2) gprop(startmo:12,1:end-1)];
+        gprop = gprop(1:endmo,:);
+        gprop = [prevseas; gprop];
+        prevseas = [mean(gcurr(startmo:12,:),2) gcurr(startmo:12,1:end-1)];
+        gcurr = gcurr(1:endmo,:);
+        gcurr = [prevseas; gcurr];
+    else % no inclusion of last year's growth conditions in estimates of this year's growth:
+        startmo = I_0+1;
+        endmo = I_f;
+        gprop = gprop(startmo:endmo,:);
+        gcurr = gcurr(startmo:endmo,:);
+    end
+    %%%%%%%%%%%%
+    %
+    if length(errorpars) == 1 % White noise error model:
+        sigma2rw = errorpars;
+        expcurr = sum((RW(cyrs)'-sqrt(1-sigma2rw)*(sum(gcurr(:,cyrs))-mean(sum(gcurr)))/std(sum(gcurr))).^2);
+        expprop = sum((RW(cyrs)'-sqrt(1-sigma2rw)*(sum(gprop(:,cyrs))-mean(sum(gprop)))/std(sum(gprop))).^2);
+        HR = exp(-.5*(expprop-expcurr)/sigma2rw);
+    elseif length(errorpars) == 2 % AR(1) error model:
+        phi1 = errorpars(1); tau2 = errorpars(2);
+        sigma2rw = tau2/(1-phi1^2);
+        %
+        [iSig] = makeAR1covmat(phi1,tau2,length(cyrs));
+        %
+        Wcurr = ((sum(gcurr(:,cyrs))-mean(sum(gcurr)))/std(sum(gcurr)))';
+        Wprop = ((sum(gprop(:,cyrs))-mean(sum(gprop)))/std(sum(gprop)))';
+        %
+        logLprop = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*Wprop)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*Wprop);
+        logLcurr = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*Wcurr)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*Wcurr);
+        HR = exp(logLprop-logLcurr);
+    end
+end
+% accept or reject the proposal.
+if binornd(1,min(HR,1))==1
+    Tt = Ttprop;
+else
+    Tt = Ttcurr;
+end
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [To] = To_U_aux(Tocurr,T,Tt,gM,RW,errorpars,gE,Gterms,ato,bto,intwindow,cyrs)
+% gM/gT is the matrix of gM for all the years and all the months of the previous simulation.
+% T is the matrix of temperature for all years and all months of the previous simulation.
+% att is the lower bound on the support of the uniform prior distribution for Tt
+% btt is the upper bound on the support of the uniform prior distribution for Tt
+%
+% SETW 6/10/2010
+Ny = size(Gterms,2);
+I_0 = intwindow(1); I_f = intwindow(2);
+if 1 % Sample from prior as proposal distribution!
+    Toprop = unifrnd(ato,bto);
+    gTprop = NaN*ones(12,Ny);
+    gTprop(T<Tt) = 0;
+    gTprop(T>Toprop) = 1;
+    gTprop(T<Toprop&T>Tt) = (T(T<Toprop&T>Tt)-Tt)/(Toprop-Tt);
+    gprop = diag(gE)*min(gM,gTprop);
+    gcurr = Gterms;
+    %
+    %%%%%%%%%% account for variable integration window:
+    if I_0<0; % if we include part of the previous year in each year's modeled growth:
+        startmo = 13+I_0;
+        endmo = I_f;
+        prevseas = [mean(gprop(startmo:12,:),2) gprop(startmo:12,1:end-1)];
+        gprop = gprop(1:endmo,:);
+        gprop = [prevseas; gprop];
+        prevseas = [mean(gcurr(startmo:12,:),2) gcurr(startmo:12,1:end-1)];
+        gcurr = gcurr(1:endmo,:);
+        gcurr = [prevseas; gcurr];
+    else % no inclusion of last year's growth conditions in estimates of this year's growth:
+        startmo = I_0+1;
+        endmo = I_f;
+        gprop = gprop(startmo:endmo,:);
+        gcurr = gcurr(startmo:endmo,:);
+    end
+    %%%%%%%%%%%%
+    %
+    if length(errorpars) == 1 % White noise error model:
+        sigma2rw = errorpars;
+        expcurr = sum((RW(cyrs)'-sqrt(1-sigma2rw)*(sum(gcurr(:,cyrs))-mean(sum(gcurr)))/std(sum(gcurr))).^2);
+        expprop = sum((RW(cyrs)'-sqrt(1-sigma2rw)*(sum(gprop(:,cyrs))-mean(sum(gprop)))/std(sum(gprop))).^2);
+        HR = exp(-.5*(expprop-expcurr)/sigma2rw);
+    elseif length(errorpars) == 2 % AR(1) error model:
+        phi1 = errorpars(1); tau2 = errorpars(2);
+        sigma2rw = tau2/(1-phi1^2);
+        %
+        [iSig] = makeAR1covmat(phi1,tau2,length(cyrs));
+        %
+        Wcurr = ((sum(gcurr(:,cyrs))-mean(sum(gcurr)))/std(sum(gcurr)))';
+        Wprop = ((sum(gprop(:,cyrs))-mean(sum(gprop)))/std(sum(gprop)))';
+        %
+        logLprop = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*Wprop)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*Wprop);
+        logLcurr = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*Wcurr)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*Wcurr);
+        HR = exp(logLprop-logLcurr);
+    end
+end
+% accept or reject the proposal.
+if binornd(1,min(HR,1))==1
+    To = Toprop;
+else
+    To = Tocurr;
+end
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [Mt] = Mt_U_aux(Mtcurr,M,Mo,gT,RW,errorpars,gE,Gterms,amt,bmt,intwindow,cyrs)
+% gM/gT is the matrix of gM for all the years and all the months of the previous simulation.
+% M is the matrix of soil moisture for all years and all months of the previous simulation.
+% amt is the lower bound on the support of the uniform prior distribution for Mt
+% bmt is the upper bound on the support of the uniform prior distribution for Mt
+%
+% SETW 6/10/2010
+Ny = size(Gterms,2);
+I_0 = intwindow(1); I_f = intwindow(2);
+if 1 % Sample from prior as proposal distribution!
+    Mtprop = unifrnd(amt,bmt);
+    gWprop = NaN*ones(12,Ny);
+    gWprop(M<Mtprop) = 0;
+    gWprop(M>Mo) = 1;
+    gWprop(M<Mo&M>Mtprop) = (M(M<Mo&M>Mtprop)-Mtprop)/(Mo-Mtprop);
+    gprop = diag(gE)*min(gWprop,gT);
+    gcurr = Gterms;
+    %
+    %%%%%%%%%% account for variable integration window:
+    if I_0<0; % if we include part of the previous year in each year's modeled growth:
+        startmo = 13+I_0;
+        endmo = I_f;
+        prevseas = [mean(gprop(startmo:12,:),2) gprop(startmo:12,1:end-1)];
+        gprop = gprop(1:endmo,:);
+        gprop = [prevseas; gprop];
+        prevseas = [mean(gcurr(startmo:12,:),2) gcurr(startmo:12,1:end-1)];
+        gcurr = gcurr(1:endmo,:);
+        gcurr = [prevseas; gcurr];
+    else % no inclusion of last year's growth conditions in estimates of this year's growth:
+        startmo = I_0+1;
+        endmo = I_f;
+        gprop = gprop(startmo:endmo,:);
+        gcurr = gcurr(startmo:endmo,:);
+    end
+    %%%%%%%%%%%%
+    %
+    if length(errorpars) == 1 % White noise error model:
+        sigma2rw = errorpars;
+        expcurr = sum((RW(cyrs)'-sqrt(1-sigma2rw)*(sum(gcurr(:,cyrs))-mean(sum(gcurr)))/std(sum(gcurr))).^2);
+        expprop = sum((RW(cyrs)'-sqrt(1-sigma2rw)*(sum(gprop(:,cyrs))-mean(sum(gprop)))/std(sum(gprop))).^2);
+        HR = exp(-.5*(expprop-expcurr)/sigma2rw);
+    elseif length(errorpars) == 2 % AR(1) error model:
+        phi1 = errorpars(1); tau2 = errorpars(2);
+        sigma2rw = tau2/(1-phi1^2);
+        %
+        [iSig] = makeAR1covmat(phi1,tau2,length(cyrs));
+        %
+        Wcurr = ((sum(gcurr(:,cyrs))-mean(sum(gcurr)))/std(sum(gcurr)))';
+        Wprop = ((sum(gprop(:,cyrs))-mean(sum(gprop)))/std(sum(gprop)))';
+        %
+        logLprop = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*Wprop)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*Wprop);
+        logLcurr = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*Wcurr)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*Wcurr);
+        HR = exp(logLprop-logLcurr);
+    end
+end
+% accept or reject the proposal.
+if binornd(1,min(HR,1))==1
+    Mt = Mtprop;
+else
+    Mt = Mtcurr;
+end
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [Mo] = Mo_U_aux(Mocurr,M,Mt,gT,RW,errorpars,gE,Gterms,amo,bmo,intwindow,cyrs)
+% gM/gT is the matrix of gM for all the years and all the months of the previous simulation.
+% M is the matrix of soil moisture for all years and all months of the previous simulation.
+% amt is the lower bound on the support of the uniform prior distribution for Mt
+% bmt is the upper bound on the support of the uniform prior distribution for Mt
+%
+% SETW 6/10/2010
+Ny = size(Gterms,2);
+I_0 = intwindow(1); I_f = intwindow(2);
+if 1 % Sample from prior as proposal distribution!
+    Moprop = unifrnd(amo,bmo);
+    gWprop = NaN*ones(12,Ny);
+    gWprop(M<Mt) = 0;
+    gWprop(M>Moprop) = 1;
+    gWprop(M<Moprop&M>Mt) = (M(M<Moprop&M>Mt)-Mt)/(Moprop-Mt);
+    gprop = diag(gE)*min(gWprop,gT);
+    gcurr = Gterms;
+    %
+    %%%%%%%%%% account for variable integration window:
+    if I_0<0; % if we include part of the previous year in each year's modeled growth:
+        startmo = 13+I_0;
+        endmo = I_f;
+        prevseas = [mean(gprop(startmo:12,:),2) gprop(startmo:12,1:end-1)];
+        gprop = gprop(1:endmo,:);
+        gprop = [prevseas; gprop];
+        prevseas = [mean(gcurr(startmo:12,:),2) gcurr(startmo:12,1:end-1)];
+        gcurr = gcurr(1:endmo,:);
+        gcurr = [prevseas; gcurr];
+    else % no inclusion of last year's growth conditions in estimates of this year's growth:
+        startmo = I_0+1;
+        endmo = I_f;
+        gprop = gprop(startmo:endmo,:);
+        gcurr = gcurr(startmo:endmo,:);
+    end
+    %%%%%%%%%%%%
+    %
+    if length(errorpars) == 1 % White noise error model:
+        sigma2rw = errorpars;
+        expcurr = sum((RW(cyrs)'-sqrt(1-sigma2rw)*(sum(gcurr(:,cyrs))-mean(sum(gcurr)))/std(sum(gcurr))).^2);
+        expprop = sum((RW(cyrs)'-sqrt(1-sigma2rw)*(sum(gprop(:,cyrs))-mean(sum(gprop)))/std(sum(gprop))).^2);
+        HR = exp(-.5*(expprop-expcurr)/sigma2rw);
+    elseif length(errorpars) == 2 % AR(1) error model:
+        phi1 = errorpars(1); tau2 = errorpars(2);
+        sigma2rw = tau2/(1-phi1^2);
+        %
+        [iSig] = makeAR1covmat(phi1,tau2,length(cyrs));
+        %
+        Wcurr = ((sum(gcurr(:,cyrs))-mean(sum(gcurr)))/std(sum(gcurr)))';
+        Wprop = ((sum(gprop(:,cyrs))-mean(sum(gprop)))/std(sum(gprop)))';
+        %
+        logLprop = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*Wprop)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*Wprop);
+        logLcurr = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*Wcurr)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*Wcurr);
+        HR = exp(logLprop-logLcurr);
+    end
+end
+% accept or reject the proposal.
+if binornd(1,min(HR,1))==1
+    Mo = Moprop;
+else
+    Mo = Mocurr;
+end
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [sigma2rw,logLdata] = errormodel0_aux(sigma2rwcurr,RW,Gterms,intwindow,cyrs)
 % RW = vector of observed annual ring widths
 % Gterms = vector of terms that sum together to give the simulated raw ring with index for all
 % months (rows) and all years (columns)
 % SETW 4/5/2013
 %
-% initialize and get optional arguments
-nvarargin = length(varargin);
-gcurr = [];
-for i = 1:nvarargin
-    varval = varargin{i};
-    if ischar(varval)
-        switch varval
-            case 'gcurr'
-                i=i+1; gcurr = varargin{i};
-        end
-    end
-end
 %%%%%%%%%% account for variable integration window:
-syear = cyrs(1); eyear = cyrs(end);
-if isempty(gcurr)
-    gcurr = VSLiteHist(syear,eyear,...
-        'T1',paramscurr.T1,'T2',paramscurr.T2,...
-        'M1',paramscurr.M1,'M2',paramscurr.M2,...
-        'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
+I_0 = intwindow(1); I_f = intwindow(2);
+if I_0<0; % if we include part of the previous year in each year's modeled growth:
+    startmo = 13+I_0;
+    endmo = I_f;
+    prevseas = [mean(Gterms(startmo:12,:),2) Gterms(startmo:12,1:end-1)];
+    Gterms = Gterms(1:endmo,:);
+    Gterms = [prevseas; Gterms];
+else % no inclusion of last year's growth conditions in estimates of this year's growth:
+    startmo = I_0+1;
+    endmo = I_f;
+    Gterms = Gterms(startmo:endmo,:);
 end
 %%%%%%%%%%%%
 % % sample proposal from the prior:
@@ -507,9 +766,12 @@ sigma2rwprop = (unifrnd(0,1))^2;
 %
 % accept or reject?
 Nyrs = length(cyrs);
+Gamma = squeeze(sum(Gterms));
+Gammabar = mean(Gamma);
+siggamma = std(Gamma);
 %
-logprop = -.5*sum((RW(cyrs)'-sqrt(1-sigma2rwprop)*gcurr).^2)/sigma2rwprop;
-logcurr = -.5*sum((RW(cyrs)'-sqrt(1-sigma2rwcurr)*gcurr).^2)/sigma2rwcurr;
+logprop = -.5*sum((RW(cyrs)-sqrt(1-sigma2rwprop)*(Gamma(cyrs)-Gammabar)/siggamma).^2)/sigma2rwprop;
+logcurr = -.5*sum((RW(cyrs)-sqrt(1-sigma2rwcurr)*(Gamma(cyrs)-Gammabar)/siggamma).^2)/sigma2rwcurr;
 HR = ((sigma2rwcurr/sigma2rwprop)^(Nyrs/2))*exp(logprop-logcurr);
 if binornd(1,min(HR,1))==1
     sigma2rw = sigma2rwprop;
@@ -520,31 +782,24 @@ else
 end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function [pars,logLdata] = errormodel1_aux(currpars,paramscurr,RW,T,M,phi,gE,intwindow,cyrs,varargin)
+function [pars,logLdata] = errormodel1_aux(currpars,RW,Gterms,intwindow,cyrs)
 % RW = vector of observed annual ring widths
 % Gterms = vector of terms that sum together to give the simulated raw ring with index for all
 % months (rows) and all years (columns)
 % SETW 4/5/2013
 %
-% initialize and get optional arguments
-nvarargin = length(varargin);
-gcurr = [];
-for i = 1:nvarargin
-    varval = varargin{i};
-    if ischar(varval)
-        switch varval
-            case 'gcurr'
-                i=i+1; gcurr = varargin{i};
-        end
-    end
-end
 %%%%%%%%%% account for variable integration window:
-syear = cyrs(1); eyear = cyrs(end);
-if isempty(gcurr)
-    gcurr = VSLiteHist(syear,eyear,...
-        'T1',paramscurr.T1,'T2',paramscurr.T2,...
-        'M1',paramscurr.M1,'M2',paramscurr.M2,...
-        'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
+I_0 = intwindow(1); I_f = intwindow(2);
+if I_0<0; % if we include part of the previous year in each year's modeled growth:
+    startmo = 13+I_0;
+    endmo = I_f;
+    prevseas = [mean(Gterms(startmo:12,:),2) Gterms(startmo:12,1:end-1)];
+    Gterms = Gterms(1:endmo,:);
+    Gterms = [prevseas; Gterms];
+else % no inclusion of last year's growth conditions in estimates of this year's growth:
+    startmo = I_0+1;
+    endmo = I_f;
+    Gterms = Gterms(startmo:endmo,:);
 end
 %%%%%%%%%%%%
 % read current values of parameters:
@@ -581,14 +836,19 @@ end
 %
 % accept or reject?
 Ny = length(cyrs);
+Gamma = squeeze(sum(Gterms));
+Gammabar = mean(Gamma);
+siggamma = std(Gamma);
+% VS-lite estimate of TRW at current parameter values:
+What = ((Gamma(cyrs)-Gammabar)/siggamma)';
 %
 [iSigprop,detSigprop] = makeAR1covmat(phi1prop,tau2prop,Ny);
 [iSigcurr,detSigcurr] = makeAR1covmat(phi1curr,tau2curr,Ny);
 alphaprop = sqrt(1-tau2prop/(1-phi1prop^2));
 alphacurr = sqrt(1-tau2curr/(1-phi1curr^2));
 %
-logLprop = -.5*(RW(cyrs)'-alphaprop*gcurr)'*iSigprop*(RW(cyrs)'-alphaprop*gcurr);
-logLcurr = -.5*(RW(cyrs)'-alphacurr*gcurr)'*iSigcurr*(RW(cyrs)'-alphacurr*gcurr);
+logLprop = -.5*(RW(cyrs)'-alphaprop*What)'*iSigprop*(RW(cyrs)'-alphaprop*What);
+logLcurr = -.5*(RW(cyrs)'-alphacurr*What)'*iSigcurr*(RW(cyrs)'-alphacurr*What);
 HR = sqrt(detSigcurr/detSigprop)*exp(logLprop-logLcurr);
 
 if binornd(1,min(HR,1))==1
