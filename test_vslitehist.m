@@ -29,17 +29,20 @@ load vslite_testdata.mat
 T = m08clim(site).T;
 P = m08clim(site).P;
 phi = sitecoords(site,1);
+D = zeros(1,size(T,2));
 
 % estimate the climate response parameters:
 disp('Performing Bayesian estimation of VS-Lite parameters for chosen site.')
 tic;
-[T1,T2,M1,M2] = estimate_vslitehist_params(trw_obs(:,site)','T',T,'P',P,'phi',phi,'nsamp',1000,'gparpriors','uniform');
+[T1,T2,M1,M2,D1,D2,taui,taue,eoi] = estimate_vslitehist_params(trw_obs(:,site)','T',T,'P',P,'D',D,'phi',phi,'nsamp',300,'gparpriors','uniform',...
+    'D1priorsupp',-3,'D2priorsupp',1,'tauipriorsupp',5,'tauepriorsupp',100,'eoipriorsupp',1);
 toc
-save('vslitehist_params.mat', 'T1','T2','M1','M2');
+save('vslitehist_params.mat', 'T1','T2','M1','M2','D1','D2','taui','taue','eoi');
 % load('vslitehist_params.mat');
 
 % Run VS-Lite.
-[trw,gT,gM,gE,M] = VSLiteHist(syear:eyear,'T1',T1,'T2',T2,'M1',M1,'M2',M2,'phi',phi,'T',T,'P',P);
+[trw,gT,gM,gE,gD,M] = VSLiteHist(syear:eyear,'phi',phi,'T',T,'P',P,'D',D,...
+    'T1',T1,'T2',T2,'M1',M1,'M2',M2,'D1',D1,'D2',D2,'taui',taui,'taue',taue,'eoi',eoi);
 % Draw some output.
 figure;
 set(gcf,'units','normalized','position',[.25 .25 .5 .4])

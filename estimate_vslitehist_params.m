@@ -1,4 +1,4 @@
-function [T1,T2,M1,M2,varargout] = estimate_vslitehist_params(RW,varargin)
+function [T1,T2,M1,M2,D1,D2,taui,taue,eoi,varargout] = estimate_vslitehist_params(RW,varargin)
 % Given calibration-interval temperature, precipitation, and ring-width data,
 % and site latitude, estimate_vslite_params_v2_3.m performes a Bayesian parameter
 % estimation of the growth response parameters T1, T2, M1 and M2. The
@@ -37,6 +37,7 @@ function [T1,T2,M1,M2,varargout] = estimate_vslitehist_params(RW,varargin)
 %                     (required if 'P' is absent)
 %     'phi':          latitude of site (in degrees N) (required)
 %     'gE':           calculated monthly growth response of insolation
+%     'D':            historical disturbance strenghs (required)
 %     'errormod'      Error model. Options are [0], [1], and [2] for white Gaussian
 %                     noise, AR(1) model, or AR(2) model.  Default is [0].
 %     'gparscalint'   Indices of years to use to estimate the growth response
@@ -70,18 +71,20 @@ function [T1,T2,M1,M2,varargout] = estimate_vslitehist_params(RW,varargin)
 %                     of Rhat. Default is [3].
 %     'T1priorsupp'   2x1 vector with elements giving lower and upper bounds
 %                     for support of uniform T1 prior. If not included in input
-%                     argument list, default used is [0.0 8.5]
-%     'T2priorsupp'   " T2 prior. Default is [9.0 20.0]
-%     'M1priorsupp'   " M1 prior. Default is [0.01 0.03]
-%     'M2priorsupp'   " M2 prior. Default is [0.1 0.5]
-%     'D1priorsupp'   " D1 prior. Default is [-5 -0.5]
-%     'D2priorsupp'   " D2 prior. Default is [0.2 2]
-%     'tauepriorsupp' " taue prior. Default is [100 500]
-%     'tauipriorsupp' " taui prior. Default is [0 10]
-%     'eoi'           " eoi prior. Default is [0 1]
-%     'dampth'        " the scaler strength threshold below which historical 
-%                       disturbance effect is considered as vanished.
-%                       default is the Euler number (e = 2.718...)
+%                     argument list, default used is [0.0 8.5]; If set to
+%                     a single scaler, it is not estimated and used as a
+%                     certain parameter fed into the model.
+%     'T2priorsupp'   T2 prior. Default is [9.0 20.0]
+%     'M1priorsupp'   M1 prior. Default is [0.01 0.03]
+%     'M2priorsupp'   M2 prior. Default is [0.1 0.5]
+%     'D1priorsupp'   D1 prior. Default is [-5 -0.5]
+%     'D2priorsupp'   D2 prior. Default is [0.2 2]
+%     'tauipriorsupp' taui prior. Default is [0 10]
+%     'tauepriorsupp' taue prior. Default is [100 500]
+%     'eoipriorsupp'  eoi prior. Default is [0 1]
+%     'dampth'        the scaler strength threshold below which historical 
+%                     disturbance effect is considered as vanished.
+%                     default is the Euler number (e = 2.718...)
 %     'convthresh'    Scalar value greater than 0.  Threshold for MCMC
 %                     convergence; warning is displayed if abs(Rhat-1)>convthresh.
 %                     Default value is [0.1].
@@ -138,6 +141,7 @@ P = varargin.get('P', []);
 M = varargin.get('M', []);
 phi = varargin.get('phi', []);
 gE = varargin.get('gE', []);
+D = varargin.get('D', []);
 errormod = varargin.get('errormod', 0);
 gparscalint = varargin.get('gparscalint', 1:length(RW));
 eparscalint = varargin.get('eparscalint', 1:length(RW));
@@ -148,21 +152,23 @@ intwindow = varargin.get('intwindow', [0 12]);
 nsamp = varargin.get('nsamp', 1000);
 nbi = varargin.get('nbi', 200);
 nchain = varargin.get('nchain', 3);
-[aT1,bT1] = dealarray(varargin.get('T1priorsupp', [0, 9]));
-[aT2,bT2] = dealarray(varargin.get('T2priorsupp', [10, 24]));
-[aM1,bM1] = dealarray(varargin.get('M1priorsupp', [0, .1]));
-[aM2,bM2] = dealarray(varargin.get('M2priorsupp', [.1, .5]));
-[aD1,bD1] = dealarray(varargin.get('D1priorsupp', [0, .1]));
-[aD2,bD2] = dealarray(varargin.get('D2priorsupp', [.1, .5]));
-[ataue,btaue] = dealarray(varargin.get('tauepriorsupp', [100, 500]));
-[ataui,btaui] = dealarray(varargin.get('tauipriorsupp', [0, 10]));
-[aeoi,beoi] = dealarray(varargin.get('eoipriorsupp', [0, 1]));
-dampth = varargin.get('dampth', .2);
+[aT1,   bT1,   cT1]   = dealprior(varargin.get('T1priorsupp',   [0, 9]));
+[aT2,   bT2,   cT2]   = dealprior(varargin.get('T2priorsupp',   [10, 24]));
+[aM1,   bM1,   cM1]   = dealprior(varargin.get('M1priorsupp',   [0, .1]));
+[aM2,   bM2,   cM2]   = dealprior(varargin.get('M2priorsupp',   [.1, .5]));
+[aD1,   bD1,   cD1]   = dealprior(varargin.get('D1priorsupp',   [-10, 0]));
+[aD2,   bD2,   cD2]   = dealprior(varargin.get('D2priorsupp',   [0, 5]));
+[ataui, btaui, ctaui] = dealprior(varargin.get('tauipriorsupp', [0, 10]));
+[ataue, btaue, ctaue] = dealprior(varargin.get('tauepriorsupp', [100, 500]));
+[aeoi,  beoi,  ceoi]  = dealprior(varargin.get('eoipriorsupp',  [0, 1]));
+dampth = varargin.get('dampth', exp(1));
 convthresh = varargin.get('convthresh', .1);
 verbose = varargin.get('verbose', 1);
 %%% check input params %%%
+if isempty(T); throw(MException('VSLiteHist:estimate_params', 'T is not set')); end
+if isempty(phi); throw(MException('VSLiteHist:estimate_params', 'phi is not set')); end
+if isempty(D); throw(MException('VSLiteHist:estimate_params', 'D is not set')); end
 if isempty(P) && isempty(M); throw(MException('VSLiteHist:estimate_params', 'neither P and M is set')); end
-if isempty(phi) && isempty(gE); throw(MException('VSLiteHist:estimate_params', 'neither phi and gE is set')); end
 %%% convert taui&taue to natural exponential time scale
 ataui = -ataui/log(dampth); btaui = -btaui/log(dampth);
 ataue = -ataue/log(dampth); btaue = -btaue/log(dampth);
@@ -197,10 +203,15 @@ if isempty(gE)
 end
 %
 %%%% Now do the MCMC sampling: %%%%%%%%%%%%%
-Ttchains = NaN(nsamp+nbi, nchain); Ttensemb = NaN(1, nsamp*nchain);
-Tochains = NaN(nsamp+nbi, nchain); Toensemb = NaN(1, nsamp*nchain);
-Mtchains = NaN(nsamp+nbi, nchain); Mtensemb = NaN(1, nsamp*nchain);
-Mochains = NaN(nsamp+nbi, nchain); Moensemb = NaN(1, nsamp*nchain);
+if ~cT1; Ttchains = NaN(nsamp+nbi, nchain); Ttensemb = NaN(1, nsamp*nchain); end
+if ~cT2; Tochains = NaN(nsamp+nbi, nchain); Toensemb = NaN(1, nsamp*nchain); end
+if ~cM1; Mtchains = NaN(nsamp+nbi, nchain); Mtensemb = NaN(1, nsamp*nchain); end
+if ~cM2; Mochains = NaN(nsamp+nbi, nchain); Moensemb = NaN(1, nsamp*nchain); end
+if ~cD1; Dtchains = NaN(nsamp+nbi, nchain); Dtensemb = NaN(1, nsamp*nchain); end
+if ~cD2; Dochains = NaN(nsamp+nbi, nchain); Doensemb = NaN(1, nsamp*nchain); end
+if ~ctaui; tauichains = NaN(nsamp+nbi, nchain); tauiensemb = NaN(1, nsamp*nchain); end
+if ~ctaue; tauechains = NaN(nsamp+nbi, nchain); taueensemb = NaN(1, nsamp*nchain); end
+if ~ceoi; eoichains = NaN(nsamp+nbi, nchain); eoiensemb = NaN(1, nsamp*nchain); end
 if errormod == 0
     sig2rwchains = NaN(nsamp+nbi, nchain); sig2rwensemb = NaN(1, nsamp*nchain);
 elseif errormod == 1
@@ -214,6 +225,11 @@ for chain = 1:nchain
     To = NaN(1,nsamp+nbi);
     Mt = NaN(1,nsamp+nbi);
     Mo = NaN(1,nsamp+nbi);
+    Dt = NaN(1,nsamp+nbi);
+    Do = NaN(1,nsamp+nbi);
+    taui = NaN(1,nsamp+nbi);
+    taue = NaN(1,nsamp+nbi);
+    eoi = NaN(1,nsamp+nbi);
     logLdata = NaN(1,nsamp+nbi);
     %
     if verbose; disp(['Working on chain ' num2str(chain)...
@@ -223,14 +239,16 @@ for chain = 1:nchain
     sim = 1;
     %
     % Initialize growth response parameters:
-    % Initialize Tt and To with draws from priors:
-    Tt(sim) = unifrnd(aT1,bT1);
-    To(sim) = unifrnd(aT2,bT2);
-    % Initialize Mt and Mo with draws from priors:
-    Mt(sim) = unifrnd(aM1,bM1);
-    Mo(sim) = unifrnd(aM2,bM2);
-    % Initialize paramscurr
-    paramscurr = struct('T1',Tt(sim),'T2',To(sim),'M1',Mt(sim),'M2',Mo(sim));
+    paramscurr = struct('T',T,'M',M,'phi',phi,'gE',gE,'D',D,'intwindow',intwindow,'dampth',dampth);
+    Tt(sim)   = unifrnd(aT1,bT1);     paramscurr.T1   = Tt(sim);     if cT1;   Tt(:)   = Tt(sim);   end
+    To(sim)   = unifrnd(aT2,bT2);     paramscurr.T2   = To(sim);     if cT2;   To(:)   = To(sim);   end
+    Mt(sim)   = unifrnd(aM1,bM1);     paramscurr.M1   = Mt(sim);     if cM1;   Mt(:)   = Mt(sim);   end
+    Mo(sim)   = unifrnd(aM2,bM2);     paramscurr.M2   = Mo(sim);     if cM2;   Mo(:)   = Mo(sim);   end
+    Dt(sim)   = unifrnd(aD1,bD1);     paramscurr.D1   = Dt(sim);     if cD1;   Dt(:)   = Dt(sim);   end
+    Do(sim)   = unifrnd(aD2,bD2);     paramscurr.D2   = Do(sim);     if cD2;   Do(:)   = Do(sim);   end
+    taui(sim) = unifrnd(ataui,btaui); paramscurr.taui = taui(sim);   if ctaui; taui(:) = taui(sim); end
+    taue(sim) = unifrnd(ataue,btaue); paramscurr.taue = taue(sim);   if ctaue; taue(:) = taue(sim); end
+    eoi(sim)  = unifrnd(aeoi,beoi);   paramscurr.eoi  = eoi(sim);    if ceoi;  eoi(:)  = eoi(sim);  end
     %
     sim = sim+1;
     %
@@ -257,33 +275,37 @@ for chain = 1:nchain
         errorpars(1) = phi1(1); errorpars(2) = tau2(1);
     end
     %
-    Gterms = VSLiteHist(1:Nyrs,...
-        'T1',paramscurr.T1,'T2',paramscurr.T2,...
-        'M1',paramscurr.M1,'M2',paramscurr.M2,...
-        'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
+    Gterms = call_VSLiteHist(1:Nyrs,paramscurr);
+    paramscurr.gcurr = Gterms;
     %
     while sim < nsamp+nbi+1
-        %
-        [Tt(sim),Gterms] = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,gparscalint,'gcurr',Gterms);
-        paramscurr.T1 = Tt(sim);
-        %
-        [To(sim),Gterms] = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,gparscalint,'gcurr',Gterms);
-        paramscurr.T2 = To(sim);
-        %
-        [Mt(sim),Gterms] = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,gparscalint,'gcurr',Gterms);
-        paramscurr.M1 = Mt(sim);
-        %
-        [Mo(sim),Gterms] = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,gparscalint,'gcurr',Gterms);
-        paramscurr.M2 = Mo(sim);
-        %
+        % estimate each parameter using Gibbs method
+        if ~cT1; [Tt(sim),Gterms] = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.T1 = Tt(sim); paramscurr.gcurr = Gterms;
+        if ~cT2; [To(sim),Gterms] = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.T2 = To(sim); paramscurr.gcurr = Gterms;
+        if ~cM1; [Mt(sim),Gterms] = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.M1 = Mt(sim); paramscurr.gcurr = Gterms;
+        if ~cM2; [Mo(sim),Gterms] = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.M2 = Mo(sim); paramscurr.gcurr = Gterms;
+        if ~cD1; [Dt(sim),Gterms] = param_U_aux('D1',aD1,bD1,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.D1 = Dt(sim); paramscurr.gcurr = Gterms;
+        if ~cD2; [Do(sim),Gterms] = param_U_aux('D2',aD2,bD2,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.D2 = Do(sim); paramscurr.gcurr = Gterms;
+        if ~ctaui; [taui(sim),Gterms] = param_U_aux('taui',ataui,btaui,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.taui = taui(sim); paramscurr.gcurr = Gterms;
+        if ~ctaue; [taue(sim),Gterms] = param_U_aux('taue',ataue,btaue,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.taue = taue(sim); paramscurr.gcurr = Gterms;
+        if ~ceoi; [eoi(sim),Gterms] = param_U_aux('eoi',aeoi,beoi,paramscurr,errorpars,RW,gparscalint); end
+        paramscurr.eoi = eoi(sim); paramscurr.gcurr = Gterms;
         % Now draw from error model parameters:
         if errormod == 0
             [errorpars,logLdata(sim)] = ...
-                errormodel0_aux(errorpars,paramscurr,RW,T,M,phi,gE,intwindow,eparscalint,'gcurr',Gterms);
+                errormodel0_aux(errorpars,paramscurr,RW,eparscalint);
             sigma2w(sim) = errorpars;
         elseif errormod == 1
             [errorpars,logLdata(sim)] = ...
-                errormodel1_aux(errorpars,paramscurr,RW,T,M,phi,gE,intwindow,eparscalint,'gcurr',Gterms);
+                errormodel1_aux(errorpars,paramscurr,RW,eparscalint);
             phi1(sim) = errorpars(1);
             tau2(sim) = errorpars(2);
         end
@@ -293,10 +315,15 @@ for chain = 1:nchain
     %
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %
-    Ttchains(:,chain) = Tt; Ttensemb(1,(chain-1)*nsamp+(1:nsamp)) = Tt(nbi+1:end);
-    Tochains(:,chain) = To; Toensemb(1,(chain-1)*nsamp+(1:nsamp)) = To(nbi+1:end);
-    Mtchains(:,chain) = Mt; Mtensemb(1,(chain-1)*nsamp+(1:nsamp)) = Mt(nbi+1:end);
-    Mochains(:,chain) = Mo; Moensemb(1,(chain-1)*nsamp+(1:nsamp)) = Mo(nbi+1:end);
+    if ~cT1;   Ttchains   (:,chain) = Tt;   Ttensemb   (1,(chain-1)*nsamp+(1:nsamp)) = Tt   (nbi+1:end); end
+    if ~cT2;   Tochains   (:,chain) = To;   Toensemb   (1,(chain-1)*nsamp+(1:nsamp)) = To   (nbi+1:end); end
+    if ~cM1;   Mtchains   (:,chain) = Mt;   Mtensemb   (1,(chain-1)*nsamp+(1:nsamp)) = Mt   (nbi+1:end); end
+    if ~cM2;   Mochains   (:,chain) = Mo;   Moensemb   (1,(chain-1)*nsamp+(1:nsamp)) = Mo   (nbi+1:end); end
+    if ~cD1;   Dtchains   (:,chain) = Dt;   Dtensemb   (1,(chain-1)*nsamp+(1:nsamp)) = Dt   (nbi+1:end); end
+    if ~cD2;   Dochains   (:,chain) = Do;   Doensemb   (1,(chain-1)*nsamp+(1:nsamp)) = Do   (nbi+1:end); end
+    if ~ctaui; tauichains (:,chain) = taui; tauiensemb (1,(chain-1)*nsamp+(1:nsamp)) = taui (nbi+1:end); end
+    if ~ctaue; tauechains (:,chain) = taue; taueensemb (1,(chain-1)*nsamp+(1:nsamp)) = taue (nbi+1:end); end
+    if ~ceoi;  eoichains  (:,chain) = eoi;  eoiensemb  (1,(chain-1)*nsamp+(1:nsamp)) = eoi  (nbi+1:end); end
     if errormod == 0
         sig2rwchains(:,chain) = sigma2w; sig2rwensemb(1,(chain-1)*nsamp+(1:nsamp)) = sigma2w(nbi+1:end);
     elseif errormod == 1
@@ -310,92 +337,92 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % assess convergence:
 if strcmp(pt_ests,'med')
-    T1 = median(Ttensemb); T2 = median(Toensemb);
-    M1 = median(Mtensemb); M2 = median(Moensemb);
-    if errormod == 0
-        sig2rw = median(sig2rwensemb);
-    elseif errormod == 1
-        phi1hat = median(phi1ensemb);
-        tau2hat = median(tau2ensemb);
-    end
+    fconvgergent = @(ensemb) median(ensemb);
 elseif strcmp(pt_ests,'mle')
     mle_ind = find(logLensemb==max(logLensemb));
     if length(mle_ind)>1; mle_ind = mle_ind(1); end
-    T1 = Ttensemb(mle_ind); T2 = Toensemb(mle_ind);
-    M1 = Mtensemb(mle_ind); M2 = Moensemb(mle_ind);
-    if errormod == 0
-        sig2rw = sig2rwensemb(mle_ind);
-    elseif errormod == 1
-        phi1hat = phi1ensemb(mle_ind);
-        tau2hat = tau2ensemb(mle_ind);
-    end
+    fconvgergent = @(ensemb) ensemb(mle_ind);
 end
-%
-RhatT1 = gelmanrubin92(nsamp,nbi,Ttchains);
-RhatT2 = gelmanrubin92(nsamp,nbi,Tochains);
-RhatM1 = gelmanrubin92(nsamp,nbi,Mtchains);
-RhatM2 = gelmanrubin92(nsamp,nbi,Mochains);
+if ~cT1;   T1   = fconvgergent(Ttensemb);   else; T1   = aT1;   end
+if ~cT2;   T2   = fconvgergent(Toensemb);   else; T2   = aT2;   end
+if ~cM1;   M1   = fconvgergent(Mtensemb);   else; M1   = aM1;   end
+if ~cM2;   M2   = fconvgergent(Moensemb);   else; M2   = aM2;   end
+if ~cD1;   D1   = fconvgergent(Dtensemb);   else; D1   = aD1;   end
+if ~cD2;   D2   = fconvgergent(Doensemb);   else; D2   = aD2;   end
+if ~ctaui; taui = fconvgergent(tauiensemb); else; taui = ataui; end
+if ~ctaue; taue = fconvgergent(taueensemb); else; taue = ataue; end
+if ~ceoi;  eoi  = fconvgergent(eoiensemb);  else; eoi  = aeoi;  end
 if errormod == 0
-    Rhatsig2rw = gelmanrubin92(nsamp,nbi,sig2rwchains);
+    sig2rw = fconvgergent(sig2rwensemb);
 elseif errormod == 1
-    Rhatphi1 = gelmanrubin92(nsamp,nbi,phi1chains);
-    Rhattau2 = gelmanrubin92(nsamp,nbi,tau2chains);
+    phi1hat = fconvgergent(phi1ensemb);
+    tau2hat = fconvgergent(tau2ensemb);
 end
 %
-Rhats = [RhatT1 RhatT2 RhatM1 RhatM2];
-if verbose == 1
-    if errormod == 0
-        Rhats = [Rhats Rhatsig2rw];
-        disp('    Rhat for T1, T2, M1, M2, sigma2rw:');
-        disp([RhatT1 RhatT2 RhatM1 RhatM2 Rhatsig2rw]);
-    elseif errormod == 1
-        Rhats = [Rhats Rhatphi1 Rhattau2];
-        disp('    Rhat for T1, T2, M1, M2, phi1, tau2:');
-        disp([RhatT1 RhatT2 RhatM1 RhatM2 Rhatphi1 Rhattau2]);
-    end
+Rhats = struct;
+if ~cT1;   RhatT1   = gelmanrubin92(nsamp,nbi,Ttchains);   Rhats.T1   = RhatT1;   end
+if ~cT2;   RhatT2   = gelmanrubin92(nsamp,nbi,Tochains);   Rhats.T2   = RhatT2;   end
+if ~cM1;   RhatM1   = gelmanrubin92(nsamp,nbi,Mtchains);   Rhats.M1   = RhatM1;   end
+if ~cM2;   RhatM2   = gelmanrubin92(nsamp,nbi,Mochains);   Rhats.M2   = RhatM2;   end
+if ~cD1;   RhatD1   = gelmanrubin92(nsamp,nbi,Dtchains);   Rhats.D1   = RhatD1;   end
+if ~cD2;   RhatD2   = gelmanrubin92(nsamp,nbi,Dochains);   Rhats.D2   = RhatD2;   end
+if ~ctaui; Rhattaui = gelmanrubin92(nsamp,nbi,tauichains); Rhats.taui = Rhattaui; end
+if ~ctaue; Rhattaue = gelmanrubin92(nsamp,nbi,tauechains); Rhats.taue = Rhattaue; end
+if ~ceoi;  Rhateoi  = gelmanrubin92(nsamp,nbi,eoichains);  Rhats.eoi  = Rhateoi;  end
+if errormod == 0
+    Rhatsig2rw = gelmanrubin92(nsamp,nbi,sig2rwchains); Rhats.sig2rw = Rhatsig2rw;
+elseif errormod == 1
+    Rhatphi1 = gelmanrubin92(nsamp,nbi,phi1chains); Rhats.phi1 = Rhatphi1;
+    Rhattau2 = gelmanrubin92(nsamp,nbi,tau2chains); Rhats.tau2 = Rhattau2;
 end
-if any(abs(Rhats-1)>convthresh)
+%
+Rhatfields = fieldnames(Rhats);
+nRhats = length(Rhatfields);
+Rhatvals = NaN(1,nRhats);
+for i = 1:nRhats; Rhatvals(i) = Rhats.(Rhatfields{i}); end
+if verbose == 1
+    heads = cell(1,nRhats);
+    vals = cell(1,nRhats);
+    headlengths = NaN(1,nRhats);
+    texthead = '    Rhat for ';
+    textvals = '             ';
+    for i = 1:nRhats
+        headitem = sprintf('% 6s', Rhatfields{i});
+        len = length(headitem);
+        valitem = sprintf(['% ', num2str(len), 's'], sprintf('%1.4f', Rhatvals(i)));
+        if i > 1
+            headitem = [' | ', headitem];
+            valitem = [' | ', valitem];
+        end
+        texthead = [texthead, headitem];
+        textvals = [textvals, valitem];
+    end
+    disp(texthead);
+    disp(textvals);
+end
+convwarning = any(abs(Rhatvals-1)>convthresh);
+if convwarning
     disp('Gelman and Rubin metric suggests MCMC has not yet converged to within desired threshold;')
     disp('Parameter estimation code should be re-run using a greater number of MCMC iterations.')
     disp('(See ''nsamp'' advanced input option.)')
-    convwarning = 1;
-else
-    convwarning = 0;
 end
 %
 if nargout > 0
-    varargout{1} = Ttensemb; varargout{2} = Toensemb;
-    varargout{3} = Mtensemb; varargout{4} = Moensemb;
-    varargout{5} = Rhats; varargout{6} = convwarning;
-    if errormod == 0
-        varargout{7} = sig2rw; varargout{8} = sig2rwensemb;
-    elseif errormod == 1
-        varargout{7} = phi1hat; varargout{8} = tau2hat;
-        varargout{9} = phi1ensemb; varargout{10} = tau2ensemb;
-    end
+    varargout{1} = Rhats; varargout{2} = convwarning;
 end
 %
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%% CONDITIONAL PARAMETER SAMPLING SUBROUTINES %%%%%%%%%%%
-function [paramval,gval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,cyrs,varargin)
-% initialize and get optional arguments
-varargin = VarArgs(varargin);
-gcurr = varargin.get('gcurr', []);
+function [paramval,gval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,cyrs)
 %
-if isempty(gcurr)
-    gcurr = VSLiteHist(cyrs,...
-        'T1',paramscurr.T1,'T2',paramscurr.T2,...
-        'M1',paramscurr.M1,'M2',paramscurr.M2,...
-        'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
+if isfield(paramscurr, 'gcurr'); gcurr = call_VSLiteHist(cyrs,paramscurr);
+else; gcurr = paramscurr.gcurr;
 end
 paramsprop = paramscurr;
 paramsprop.(paramname) = unifrnd(boundlower,boundupper);
-gprop = VSLiteHist(cyrs,...
-    'T1',paramsprop.T1,'T2',paramsprop.T2,...
-    'M1',paramsprop.M1,'M2',paramsprop.M2,...
-    'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
+gprop = call_VSLiteHist(cyrs,paramsprop);
 %
 if length(errorpars) == 1 % White noise error model:
     sigma2rw = errorpars;
@@ -423,21 +450,15 @@ else
 end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function [sigma2rw,logLdata] = errormodel0_aux(sigma2rwcurr,paramscurr,RW,T,M,phi,gE,intwindow,cyrs,varargin)
+function [sigma2rw,logLdata] = errormodel0_aux(sigma2rwcurr,paramscurr,RW,cyrs)
 % RW = vector of observed annual ring widths
 % Gterms = vector of terms that sum together to give the simulated raw ring with index for all
 % months (rows) and all years (columns)
 % SETW 4/5/2013
 %
-% initialize and get optional arguments
-varargin = VarArgs(varargin);
-gcurr = varargin.get('gcurr', []);
 %%%%%%%%%% account for variable integration window:
-if isempty(gcurr)
-    gcurr = VSLiteHist(cyears,...
-        'T1',paramscurr.T1,'T2',paramscurr.T2,...
-        'M1',paramscurr.M1,'M2',paramscurr.M2,...
-        'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
+if isfield(paramscurr, 'gcurr'); gcurr = call_VSLiteHist(cyrs,paramscurr);
+else; gcurr = paramscurr.gcurr;
 end
 %%%%%%%%%%%%
 % % sample proposal from the prior:
@@ -469,15 +490,9 @@ function [pars,logLdata] = errormodel1_aux(currpars,paramscurr,RW,T,M,phi,gE,int
 % months (rows) and all years (columns)
 % SETW 4/5/2013
 %
-% initialize and get optional arguments
-varargin = VarArgs(varargin);
-gcurr = varargin.get('gcurr', []);
 %%%%%%%%%% account for variable integration window:
-if isempty(gcurr)
-    gcurr = VSLiteHist(cyears,...
-        'T1',paramscurr.T1,'T2',paramscurr.T2,...
-        'M1',paramscurr.M1,'M2',paramscurr.M2,...
-        'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
+if isfield(paramscurr, 'gcurr'); gcurr = call_VSLiteHist(cyrs,paramscurr);
+else; gcurr = paramscurr.gcurr;
 end
 %%%%%%%%%%%%
 % read current values of parameters:
@@ -602,3 +617,38 @@ dfX = 2*(VhatX.^2)./varhatVhatX;
 Rhat = (VhatX./WX).*(dfX./(dfX-2));
 end
 
+function [av,bv,cv] = dealprior(priorarr)
+% resolve the prior argument
+% if prior is a 2D vector, it is used as the proposal sampling range. in
+% this case, av and bv are respectively resolved as the lower and upper
+% bound. and cv is set to FALSE.
+% if prior is a scalar, it is used as the certain parameter and not estima-
+% ted. in this case, av and bv are both resolved as the certain parameter
+% value. and cv is set to TRUE.
+% 
+n = length(priorarr);
+if n == 1
+    av = priorarr;
+    bv = priorarr;
+    cv = true;
+elseif n == 2
+    av = priorarr(1);
+    bv = priorarr(2);
+    cv = false;
+else
+    throw(MException('VSLiteHist:estimate_prior', 'prior must be a scalar or a 2D vector'));
+end
+    
+end
+
+function [Gterms] = call_VSLiteHist(cyears, parameters)
+Gterms = VSLiteHist(cyears,...
+    'T1',parameters.T1,'T2',parameters.T2,...
+    'M1',parameters.M1,'M2',parameters.M2,...
+    'D1',parameters.D1,'D2',parameters.D2,...
+    'taui',parameters.taui,'taue',parameters.taue,...
+    'eoi',parameters.eoi,...
+    'T',parameters.T,'M',parameters.M,'D',parameters.D,...
+    'phi',parameters.phi,'dampth',parameters.dampth,...
+    'gE',parameters.gE,'intwindow',parameters.intwindow);
+end

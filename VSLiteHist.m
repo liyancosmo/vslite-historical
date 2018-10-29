@@ -23,9 +23,9 @@ function [trw,varargout] = VSLiteHist(iyears,varargin)
 %   'taui':      time constant of inhibition effect of historical disturbance (in years)
 %   'taue':      time constant of promotion effect of historical disturbance (in years)
 %   'eoi':       historical disturbance effect ratio (strength of promotion effect versus strength of inhibition effect)
-%                (Note that optimal growth response parameters T1, T2, M1, M2 may be estimated
-%                 using code estimate_vslite_params_v2_3.m also freely available at
-%                 the NOAA NCDC Paleoclimatology software library.)
+%                (the above parameters are all required. Note that these growth re-
+%                 sponse parameters may be estimated using code estimate_vslite_pa-
+%                 rams_v2_3.m)
 %   'dampth'     scaler strength threshold below which historical disturba-
 %                nce effect is considered as vanished. default is the Euler
 %                number (e = 2.718...).
@@ -37,7 +37,7 @@ function [trw,varargout] = VSLiteHist(iyears,varargin)
 %                (required if 'P' is absent)
 %   'phi':       latitude of site (in degrees N) (required)
 %   'gE':        calculated monthly growth response of insolation
-%   'D':         historical disturbance strenghs
+%   'D':         historical disturbance strenghs (required)
 %   'lbparams':  Parameters of the Leaky Bucket model of soil moisture.
 %                These may be specified in an 8 x 1 vector in the following
 %                order (otherwise the default values are read in):
@@ -106,7 +106,7 @@ D2 = varargin.get('D2', []);
 taui = varargin.get('taui', []);
 taue = varargin.get('taue', []);
 eoi = varargin.get('eoi', []);
-dampth = varargin.get('dampth', []);
+dampth = varargin.get('dampth', exp(1));
 T = varargin.get('T', []);
 P = varargin.get('P', []);
 M = varargin.get('M', []);
@@ -117,8 +117,10 @@ D = varargin.get('D', []);
     dealarray(varargin.get('lbparams', [0.76, 0.01, 0.093, 4.886, 5.80, 1000, 0.2, 0]));
 [I_0,I_f] = dealarray(varargin.get('intwindow', [1,12]));
 %%% check input params %%%
+if isempty(T); throw(MException('VSLiteHist:VSLiteHist', 'T is not set')); end
+if isempty(phi); throw(MException('VSLiteHist:VSLiteHist', 'phi is not set')); end
+if isempty(D); throw(MException('VSLiteHist:VSLiteHist', 'D is not set')); end
 if isempty(P) && isempty(M); throw(MException('VSLiteHist:VSLiteHist', 'neither P and M is set')); end
-if isempty(phi) && isempty(gE); throw(MException('VSLiteHist:VSLiteHist', 'neither phi and gE is set')); end
 %%% convert taui&taue to natural exponential time scale
 taui = -taui/log(dampth);
 taue = -taue/log(dampth);
@@ -179,8 +181,6 @@ elseif phi<0 % if site is in the Southern Hemisphere:
 end
 g0 = sum(grstack(startmo:endmo,:));
 % compute growth response to historical disturbance
-gD(:) = 1;
-D = zeros([1,nyrs]); taue = 100; taui = 5; eoi = 1; D1 = -3; D2 = 1;
 for i = 1:nyrs
     Di = D(1:i);
     tau = i - (1:i);
@@ -199,8 +199,8 @@ if nargout >=1
     varargout(1) = {gT};
     varargout(2) = {gM};
     varargout(3) = {gE};
-    varargout(4) = {M};
-    varargout(5) = {gD};
+    varargout(4) = {gD};
+    varargout(5) = {M};
     varargout(6) = {trwidth};
     varargout(7) = {mean(trwidth)};
     varargout(8) = {std(trwidth)};
