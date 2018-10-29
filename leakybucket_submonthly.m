@@ -1,4 +1,4 @@
-function [M,potEv,ndl,cdays] = leakybucket_submonthly(syear,eyear,phi,T,P,...
+function [M,potEv,ndl,cdays] = leakybucket_submonthly(iyears,phi,T,P,...
     Mmax,Mmin,alph,m_th,mu_th,rootd,M0)
 % leackybucket_submonthly.m - Simulate soil moisture; substeps within monthly timesteps
 % to better capture nonlinearities and improve moisture estimates.
@@ -31,8 +31,7 @@ function [M,potEv,ndl,cdays] = leakybucket_submonthly(syear,eyear,phi,T,P,...
 % soil moisture initial conditions for restarts, or spin-up.  Hands back monthly soil moisture
 % and summer soil moisture as well - see varargout.  Nick G. 2011/06
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-iyear = syear:eyear;
-nyrs = length(iyear);
+nyrs = length(iyears);
 % Storage for growth response output variables (size [12 x Nyears]):
 M   = NaN(12,nyrs);
 potEv = NaN(12,nyrs);
@@ -81,7 +80,7 @@ L = (ndays(2:13)/30).*(nhrs/12); % mean daylength in each month.
 % cyear = year the model is currently working on
 % iyear = index of simulation year
 
-for cyear=1:length(iyear)      % begin cycling over years
+for cyear=1:length(iyears)      % begin cycling over years
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     for t = 1:12  % begin cycling over months in a year
         %%%%% Compute potential evapotranspiration for current month after Thornthwaite:

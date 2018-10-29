@@ -1,4 +1,4 @@
-function [trw,varargout] = VSLiteHist(syear,eyear,varargin)
+function [trw,varargout] = VSLiteHist(iyears,varargin)
 % VSLite_v2_3.m - Simulate tree ring width index given monthly climate inputs.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Basic Usage:
@@ -18,9 +18,17 @@ function [trw,varargout] = VSLiteHist(syear,eyear,varargin)
 %   'T2':        scalar temperature threshold above which temp. growth response is one (in deg. C)
 %   'M1':        scalar soil moisture threshold below which moist. growth response is zero (in v/v)
 %   'M2':        scalar soil moisture threshold above which moist. growth response is one (in v/v)
+%   'D1':        scalar historical disturbance threshold below which historical disturbance growth response is zero (in times)
+%   'D2':        scalar historical disturbance threshold above which historical disturbance growth response is zero (in times)
+%   'taui':      time constant of inhibition effect of historical disturbance (in years)
+%   'taue':      time constant of promotion effect of historical disturbance (in years)
+%   'eoi':       historical disturbance effect ratio (strength of promotion effect versus strength of inhibition effect)
 %                (Note that optimal growth response parameters T1, T2, M1, M2 may be estimated
 %                 using code estimate_vslite_params_v2_3.m also freely available at
 %                 the NOAA NCDC Paleoclimatology software library.)
+%   'dampth'     scaler strength threshold below which historical disturba-
+%                nce effect is considered as vanished. default is the Euler
+%                number (e = 2.718...).
 %   'T':         (12 x Nyrs) matrix of ordered mean monthly temperatures 
 %                (in degEes C) (required)
 %   'P':         (12 x Nyrs) matrix of ordered accumulated monthly precipi-
@@ -29,6 +37,7 @@ function [trw,varargout] = VSLiteHist(syear,eyear,varargin)
 %                (required if 'P' is absent)
 %   'phi':       latitude of site (in degrees N) (required)
 %   'gE':        calculated monthly growth response of insolation
+%   'D':         historical disturbance strenghs
 %   'lbparams':  Parameters of the Leaky Bucket model of soil moisture.
 %                These may be specified in an 8 x 1 vector in the following
 %                order (otherwise the default values are read in):
@@ -84,77 +93,36 @@ function [trw,varargout] = VSLiteHist(syear,eyear,varargin)
 % v2.3 - Add switch to allow moisture M to be given as input rather than estimated
 %        from T and P; add variable input options and improve commenting (SETW, 7/13)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-iyear = syear:eyear;
-nyrs = length(syear:eyear);
+nyrs = length(iyears);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Read in advanced inputs if user-specified; else read in parameter defaults:
-if nargin > 6
-    %%%% First fill parameter values in with defaults: %%%%%
-    % Parameters of the Leaky Bucket model:
-    T1 = [];
-    T2 = [];
-    M1 = [];
-    M2 = [];
-    T = [];
-    P = [];
-    M = [];
-    phi = [];
-    gE = [];
-    Mmax = 0.76;
-    Mmin = 0.01;
-    alph = 0.093;
-    m_th = 4.886;
-    mu_th = 5.80;
-    rootd = 1000;
-    M0 = 0.2;
-    substep = 0;
-    % Integration window parameters:
-    I_0 = 1;
-    I_f = 12;
-    % then over-write defaults if user-specified:
-    Nvararg = length(varargin);
-    for i = 1:Nvararg/2
-        namein = varargin{2*(i-1)+1};
-        valin = varargin{2*i};
-        switch namein
-            case 'T1'
-                T1 = valin;
-            case 'T2'
-                T2 = valin;
-            case 'M1'
-                M1 = valin;
-            case 'M2'
-                M2 = valin;
-            case 'T'
-                T = valin;
-            case 'P'
-                P = valin;
-            case 'M'
-                M = valin;
-            case 'phi'
-                phi = valin;
-            case 'gE'
-                gE = valin;
-            case 'lbparams'
-                Mmax = valin(1);
-                Mmin = valin(2);
-                alph = valin(3);
-                m_th = valin(4);
-                mu_th = valin(5);
-                rootd = valin(6);
-                M0 = valin(7);
-                substep = valin(8);
-            case 'intwindow'
-                I_0 = valin(1);
-                I_f = valin(2);
-        end
-    end
-else
-    throw(MException('VSLiteHist:VSLiteHist', 'no enough params received'));
-end
+varargin = VarArgs(varargin);
+T1 = varargin.get('T1', []);
+T2 = varargin.get('T2', []);
+M1 = varargin.get('M1', []);
+M2 = varargin.get('M2', []);
+D1 = varargin.get('D1', []);
+D2 = varargin.get('D2', []);
+taui = varargin.get('taui', []);
+taue = varargin.get('taue', []);
+eoi = varargin.get('eoi', []);
+dampth = varargin.get('dampth', []);
+T = varargin.get('T', []);
+P = varargin.get('P', []);
+M = varargin.get('M', []);
+phi = varargin.get('phi', 0);
+gE = varargin.get('gE', []);
+D = varargin.get('D', []);
+[Mmax, Mmin, alph, m_th, mu_th, rootd, M0, substep] = ...
+    dealarray(varargin.get('lbparams', [0.76, 0.01, 0.093, 4.886, 5.80, 1000, 0.2, 0]));
+[I_0,I_f] = dealarray(varargin.get('intwindow', [1,12]));
 %%% check input params %%%
 if isempty(P) && isempty(M); throw(MException('VSLiteHist:VSLiteHist', 'neither P and M is set')); end
 if isempty(phi) && isempty(gE); throw(MException('VSLiteHist:VSLiteHist', 'neither phi and gE is set')); end
+%%% convert taui&taue to natural exponential time scale
+taui = -taui/log(dampth);
+taue = -taue/log(dampth);
+damph = exp(1);
 %%% specify a negative I_0 means we use previous year's data. as we skipped
 %%% 0 here (I_0=1 for first month of current year, while I_0=-1 for last
 %%% month of previous year), we increase negative I_0 by 1.
@@ -162,16 +130,17 @@ if I_0<0; I_0=I_0+1; end
 %%% Pre-allocate storage for outputs: %%%%
 gT = NaN(12,nyrs);
 gM = NaN(12,nyrs);
-potEv = NaN(12,nyrs);
+gD = NaN(1,nyrs);
+eD = NaN(1,nyrs);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Load in or estimate soil moisture:
 if isempty(M)
     M = NaN(12,nyrs);
     % Compute soil moisture:
-    if substep == 1;
-        M = leakybucket_submonthly(syear,eyear,phi,T,P,Mmax,Mmin,alph,m_th,mu_th,rootd,M0);
+    if substep == 1
+        M = leakybucket_submonthly(iyears,phi,T,P,Mmax,Mmin,alph,m_th,mu_th,rootd,M0);
     elseif substep == 0
-        M = leakybucket_monthly(syear,eyear,phi,T,P,Mmax,Mmin,alph,m_th,mu_th,rootd,M0);
+        M = leakybucket_monthly(iyears,phi,T,P,Mmax,Mmin,alph,m_th,mu_th,rootd,M0);
     elseif substep ~=1 && substep ~= 0
         disp('''substep'' must either be set to 1 or 0.');
         return
@@ -187,28 +156,42 @@ end
 %%%%%%%%%%%%%%%%
 % syear = start (first) year of simulation
 % eyear = end (last) year of simulation
-% Compute monthly growth response to T & M, and overall growth response G:
+% Compute monthly growth response to T & M, and overall growth response g0:
 gT(T<T1) = 0;
 gT(T>T2) = 1;
 gT((T>=T1)&(T<=T2)) = (T((T>=T1)&(T<=T2))-T1)/(T2-T1);
 gM(M<M1) = 0;
 gM(M>M2) = 1;
 gM((M>=M1)&(M<=M2)) = (M((M>=M1)&(M<=M2))-M1)/(M2-M1);
-Gr = diag(gE)*min(gT,gM);
+gr = diag(gE)*min(gT,gM);
 %%%%%%%%%%%%%% Compute proxy quantity from growth responses %%%%%%%%%%%%%%%
 if phi>0 % if site is in the Northern Hemisphere:
-    Grstack = [NaN(12,1),Gr(:,1:end-1);Gr];
-    Grstack(isnan(Grstack(:,1)),1) = mean( Grstack(isnan(Grstack(:,1)),2:end), 2 );
+    grstack = [NaN(12,1),gr(:,1:end-1);gr];
+    grstack(isnan(grstack(:,1)),1) = mean( grstack(isnan(grstack(:,1)),2:end), 2 );
     startmo = 12+I_0;
     endmo = 12+I_f;
 elseif phi<0 % if site is in the Southern Hemisphere:
-    Grstack = [Gr;Gr(:,2:end),NaN(12,1)];
-    Grstack(isnan(Grstack(:,1)),end) = mean( Grstack(isnan(Grstack(:,1)),1:end-1), 2 );
+    grstack = [gr;gr(:,2:end),NaN(12,1)];
+    grstack(isnan(grstack(:,1)),end) = mean( grstack(isnan(grstack(:,1)),1:end-1), 2 );
     % (Note: in the Southern Hemisphere, ring widths are dated to the year in which growth began!)
     startmo = 6+I_0; % (eg. I_0 = -4 in SH corresponds to starting integration in March of cyear)
     endmo = 6+I_f; % (eg. I_f = 12 in SH corresponds to ending integraion in June of next year)
 end
-trwidth = sum(Grstack(startmo:endmo,:));
+g0 = sum(grstack(startmo:endmo,:));
+% compute growth response to historical disturbance
+gD(:) = 1;
+D = zeros([1,nyrs]); taue = 100; taui = 5; eoi = 1; D1 = -3; D2 = 1;
+for i = 1:nyrs
+    Di = D(1:i);
+    tau = i - (1:i);
+    eD(i) = disturbance_effect(Di,tau,taue,taui,eoi);
+end
+gD(eD<D1) = 0;
+gD(eD>D2) = 1;
+gD((eD>=D1)&(eD<=D2)) = (eD((eD>=D1)&(eD<=D2))-D1)/(D2-D1);
+% compute final response trwidth
+trwidth = g0.*gD;
+
 %
 trw = ((trwidth-mean(trwidth))/std(trwidth))'; % proxy series is standardized width.
 %
@@ -217,10 +200,10 @@ if nargout >=1
     varargout(2) = {gM};
     varargout(3) = {gE};
     varargout(4) = {M};
-    varargout(5) = {potEv};
-    varargout{6} = {trwidth};
-    varargout{7} = {mean(trwidth)};
-    varargout{8} = {std(trwidth)};
+    varargout(5) = {gD};
+    varargout(6) = {trwidth};
+    varargout(7) = {mean(trwidth)};
+    varargout(8) = {std(trwidth)};
 end
 %
 end

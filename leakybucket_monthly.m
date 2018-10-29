@@ -1,5 +1,5 @@
 function [M,potEv,ndl,cdays] =...
-    leakybucket_monthly(syear,eyear,phi,T,P,Mmax,Mmin,alph,m_th,mu_th,rootd,M0)
+    leakybucket_monthly(iyears,phi,T,P,Mmax,Mmin,alph,m_th,mu_th,rootd,M0)
 % leackybucket_monthly.m - Simulate soil moisture with coarse monthly time step.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Usage: [M,potEv,ndl,cdays] = leakybucket_monthly(syear,eyear,phi,T,P,Mmax,Mmin,alph,m_th,mu_th,rootd,M0)
@@ -25,8 +25,7 @@ function [M,potEv,ndl,cdays] =...
 %
 % SETW 2011
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-iyear = syear:eyear;
-nyrs = length(iyear);
+nyrs = length(iyears);
 % Storage for output variables (size [12 x Nyears]):
 M  = NaN(12,nyrs);
 potEv = NaN(12,nyrs);
@@ -76,12 +75,12 @@ for cyear=1:nyrs     % begin cycling over years
         %%%%% Compute potential evapotranspiration for current month after Thornthwaite:
         if T(t,cyear) < 0
             Ep = 0;
-        elseif T(t,cyear)>=0 && T(t,cyear) < 26.5;
+        elseif T(t,cyear)>=0 && T(t,cyear) < 26.5
             istar = (T(:,cyear)/5); istar(istar<0) = 0;
             I = sum(istar.^1.514);
             a = (6.75e-7)*I^3 - (7.71e-5)*I^2 + (1.79e-2)*I + .49;
             Ep = 16*L(t)*(10*T(t,cyear)/I)^a;
-        elseif T(t,cyear) >= 26.5;
+        elseif T(t,cyear) >= 26.5
             Ep = -415.85 + 32.25*T(t,cyear) - .43* T(t,cyear)^2;
         end
         potEv(t,cyear) = Ep;

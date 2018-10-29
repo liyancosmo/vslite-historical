@@ -74,6 +74,14 @@ function [T1,T2,M1,M2,varargout] = estimate_vslitehist_params(RW,varargin)
 %     'T2priorsupp'   " T2 prior. Default is [9.0 20.0]
 %     'M1priorsupp'   " M1 prior. Default is [0.01 0.03]
 %     'M2priorsupp'   " M2 prior. Default is [0.1 0.5]
+%     'D1priorsupp'   " D1 prior. Default is [-5 -0.5]
+%     'D2priorsupp'   " D2 prior. Default is [0.2 2]
+%     'tauepriorsupp' " taue prior. Default is [100 500]
+%     'tauipriorsupp' " taui prior. Default is [0 10]
+%     'eoi'           " eoi prior. Default is [0 1]
+%     'dampth'        " the scaler strength threshold below which historical 
+%                       disturbance effect is considered as vanished.
+%                       default is the Euler number (e = 2.718...)
 %     'convthresh'    Scalar value greater than 0.  Threshold for MCMC
 %                     convergence; warning is displayed if abs(Rhat-1)>convthresh.
 %                     Default value is [0.1].
@@ -124,84 +132,41 @@ function [T1,T2,M1,M2,varargout] = estimate_vslitehist_params(RW,varargin)
 %                  as opposed to necessarily estimating M from T & P via
 %                  Leaky Bucket.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-if nargin > 4 % read in advanced options if user-specified:
-    % first fill values in with defaults:
-    T = [];
-    P = [];
-    M = [];
-    phi = [];
-    gE = [];
-    errormod = 0;
-    gparscalint = 1:length(RW);
-    eparscalint = 1:length(RW);
-    pt_ests = 'mle';
-    substep = 0;
-    intwindow = [0 12];
-    nsamp = 1000;
-    nbi = 200;
-    nchain = 3;
-    aT1 = 0; bT1 = 9;
-    aT2 = 10; bT2 = 24;
-    aM1 = 0; bM1 = .1;
-    aM2 = .1; bM2 = .5;
-    convthresh = .1;
-    verbose = 1;
-    % then over-write defaults if user-specified:
-    Nvararg = length(varargin);
-    for i = 1:Nvararg/2
-        namein = varargin{2*(i-1)+1};
-        valin = varargin{2*i};
-        switch namein
-            case 'T'
-                T = valin;
-            case 'P'
-                P = valin;
-            case 'M'
-                M = valin;
-            case 'phi'
-                phi = valin;
-            case 'gE'
-                gE = valin;
-            case 'errormod'
-                errormod = valin;
-            case 'gparscalint'
-                gparscalint = valin;
-            case 'eparscalint'
-                eparscalint = valin;
-            case 'errorpars'
-                errorpars = valin;
-            case 'pt_ests'
-                pt_ests = valin;
-            case 'substep'
-                substep = valin;
-            case 'intwindow'
-                intwindow = valin;
-            case 'nsamp'
-                nsamp = valin;
-            case 'nbi'
-                nbi = valin;
-            case 'nchain'
-                nchain = valin;
-            case 'T1priorsupp'
-                aT1 = valin(1); bT1 = valin(2);
-            case 'T2priorsupp'
-                aT2 = valin(1); bT2 = valin(2);
-            case 'M1priorsupp'
-                aM1 = valin(1); bM1 = valin(2);
-            case 'M2priorsupp'
-                aM2 = valin(1); bM2 = valin(2);
-            case 'convthresh'
-                convthresh = valin;
-            case 'verbose'
-                verbose = valin;
-        end
-    end
-else % otherwise, read in defaults:
-    throw(MException('VSLiteHist:estimate_params', 'no enough params received'));
-end
+varargin = VarArgs(varargin);
+T = varargin.get('T', []);
+P = varargin.get('P', []);
+M = varargin.get('M', []);
+phi = varargin.get('phi', []);
+gE = varargin.get('gE', []);
+errormod = varargin.get('errormod', 0);
+gparscalint = varargin.get('gparscalint', 1:length(RW));
+eparscalint = varargin.get('eparscalint', 1:length(RW));
+errorpars = varargin.get('errorpars', 0.5);
+pt_ests = varargin.get('pt_ests', 'mle');
+substep = varargin.get('substep', 0);
+intwindow = varargin.get('intwindow', [0 12]);
+nsamp = varargin.get('nsamp', 1000);
+nbi = varargin.get('nbi', 200);
+nchain = varargin.get('nchain', 3);
+[aT1,bT1] = dealarray(varargin.get('T1priorsupp', [0, 9]));
+[aT2,bT2] = dealarray(varargin.get('T2priorsupp', [10, 24]));
+[aM1,bM1] = dealarray(varargin.get('M1priorsupp', [0, .1]));
+[aM2,bM2] = dealarray(varargin.get('M2priorsupp', [.1, .5]));
+[aD1,bD1] = dealarray(varargin.get('D1priorsupp', [0, .1]));
+[aD2,bD2] = dealarray(varargin.get('D2priorsupp', [.1, .5]));
+[ataue,btaue] = dealarray(varargin.get('tauepriorsupp', [100, 500]));
+[ataui,btaui] = dealarray(varargin.get('tauipriorsupp', [0, 10]));
+[aeoi,beoi] = dealarray(varargin.get('eoipriorsupp', [0, 1]));
+dampth = varargin.get('dampth', .2);
+convthresh = varargin.get('convthresh', .1);
+verbose = varargin.get('verbose', 1);
 %%% check input params %%%
 if isempty(P) && isempty(M); throw(MException('VSLiteHist:estimate_params', 'neither P and M is set')); end
 if isempty(phi) && isempty(gE); throw(MException('VSLiteHist:estimate_params', 'neither phi and gE is set')); end
+%%% convert taui&taue to natural exponential time scale
+ataui = -ataui/log(dampth); btaui = -btaui/log(dampth);
+ataue = -ataue/log(dampth); btaue = -btaue/log(dampth);
+damph = exp(1);
 %
 % Take zscore of RW data to fulfill assumptions of model error/noise structure
 RW = zscore(RW);
@@ -220,10 +185,10 @@ Nyrs = size(T,2);
 % Read in or compute estimate of soil moisture M:
 if isempty(M)
     % then estimate soil moisture from T and P inputs via Leaky Bucket:
-    if substep == 1;
-        M = leakybucket_submonthly(1,Nyrs,phi,T,P,Mmax,Mmin,alpha,mth,muth,dr,Minit/dr);
+    if substep == 1
+        M = leakybucket_submonthly(1:Nyrs,phi,T,P,Mmax,Mmin,alpha,mth,muth,dr,Minit/dr);
     elseif substep == 0
-        M = leakybucket_monthly(1,Nyrs,phi,T,P,Mmax,Mmin,alpha,mth,muth,dr,Minit/dr);
+        M = leakybucket_monthly(1:Nyrs,phi,T,P,Mmax,Mmin,alpha,mth,muth,dr,Minit/dr);
     end
 end
 % Compute monthly growth response to insolation, gE:
@@ -274,11 +239,11 @@ for chain = 1:nchain
     % Create storage space to hold current values of the parameters to pass
     % to auxiliary sampling functions, and storage for MCMC realizations of these
     % parameters. Then initialize values of parameters.
-    if errormod == 0;
+    if errormod == 0
         sigma2w = NaN(nsamp+nbi,1);
         sigma2w(1) = unifrnd(0,1); % initialize estimate from the prior.
         errorpars = sigma2w(1); % errorpars holds current value of error model parameters.
-    elseif errormod == 1;
+    elseif errormod == 1
         tau2 = NaN(nsamp+nbi,1);
         phi1 = NaN(nsamp+nbi,1);
         % initialize estimates from the joint prior:
@@ -292,7 +257,7 @@ for chain = 1:nchain
         errorpars(1) = phi1(1); errorpars(2) = tau2(1);
     end
     %
-    Gterms = VSLiteHist(1,Nyrs,...
+    Gterms = VSLiteHist(1:Nyrs,...
         'T1',paramscurr.T1,'T2',paramscurr.T2,...
         'M1',paramscurr.M1,'M2',paramscurr.M2,...
         'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
@@ -344,7 +309,7 @@ end
 % POSTPROCESS SAMPLES:
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % assess convergence:
-if strcmp(pt_ests,'med');
+if strcmp(pt_ests,'med')
     T1 = median(Ttensemb); T2 = median(Toensemb);
     M1 = median(Mtensemb); M2 = median(Moensemb);
     if errormod == 0
@@ -416,30 +381,18 @@ end
 %%%%%%%%% CONDITIONAL PARAMETER SAMPLING SUBROUTINES %%%%%%%%%%%
 function [paramval,gval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,T,M,phi,gE,intwindow,cyrs,varargin)
 % initialize and get optional arguments
-nvarargin = length(varargin);
-gcurr = [];
-for i = 1:nvarargin
-    varval = varargin{i};
-    if ischar(varval)
-        switch varval
-            case 'gcurr'
-                i=i+1; gcurr = varargin{i};
-        end
-    end
-end
-%
-syear = cyrs(1);
-eyear = cyrs(end);
+varargin = VarArgs(varargin);
+gcurr = varargin.get('gcurr', []);
 %
 if isempty(gcurr)
-    gcurr = VSLiteHist(syear,eyear,...
+    gcurr = VSLiteHist(cyrs,...
         'T1',paramscurr.T1,'T2',paramscurr.T2,...
         'M1',paramscurr.M1,'M2',paramscurr.M2,...
         'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
 end
 paramsprop = paramscurr;
 paramsprop.(paramname) = unifrnd(boundlower,boundupper);
-gprop = VSLiteHist(syear,eyear,...
+gprop = VSLiteHist(cyrs,...
     'T1',paramsprop.T1,'T2',paramsprop.T2,...
     'M1',paramsprop.M1,'M2',paramsprop.M2,...
     'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
@@ -477,21 +430,11 @@ function [sigma2rw,logLdata] = errormodel0_aux(sigma2rwcurr,paramscurr,RW,T,M,ph
 % SETW 4/5/2013
 %
 % initialize and get optional arguments
-nvarargin = length(varargin);
-gcurr = [];
-for i = 1:nvarargin
-    varval = varargin{i};
-    if ischar(varval)
-        switch varval
-            case 'gcurr'
-                i=i+1; gcurr = varargin{i};
-        end
-    end
-end
+varargin = VarArgs(varargin);
+gcurr = varargin.get('gcurr', []);
 %%%%%%%%%% account for variable integration window:
-syear = cyrs(1); eyear = cyrs(end);
 if isempty(gcurr)
-    gcurr = VSLiteHist(syear,eyear,...
+    gcurr = VSLiteHist(cyears,...
         'T1',paramscurr.T1,'T2',paramscurr.T2,...
         'M1',paramscurr.M1,'M2',paramscurr.M2,...
         'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
@@ -527,21 +470,11 @@ function [pars,logLdata] = errormodel1_aux(currpars,paramscurr,RW,T,M,phi,gE,int
 % SETW 4/5/2013
 %
 % initialize and get optional arguments
-nvarargin = length(varargin);
-gcurr = [];
-for i = 1:nvarargin
-    varval = varargin{i};
-    if ischar(varval)
-        switch varval
-            case 'gcurr'
-                i=i+1; gcurr = varargin{i};
-        end
-    end
-end
+varargin = VarArgs(varargin);
+gcurr = varargin.get('gcurr', []);
 %%%%%%%%%% account for variable integration window:
-syear = cyrs(1); eyear = cyrs(end);
 if isempty(gcurr)
-    gcurr = VSLiteHist(syear,eyear,...
+    gcurr = VSLiteHist(cyears,...
         'T1',paramscurr.T1,'T2',paramscurr.T2,...
         'M1',paramscurr.M1,'M2',paramscurr.M2,...
         'T',T,'M',M,'phi',phi,'gE',gE,'intwindow',intwindow);
@@ -651,8 +584,6 @@ Xbarbar = mean(Xbar);
 BX = n*(sum(((Xbar-repmat(Xbarbar,1,m)).^2),2))/(m-1);
 %
 WX = nanmean(Xs2,2);
-%
-muhatX = nanmean(allX,2);
 %
 sig2hatX = (n-1)*WX/n + BX/n; % G&R92 eqn. 3
 %
