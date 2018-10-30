@@ -173,35 +173,9 @@ if isempty(P) && isempty(M); throw(MException('VSLiteHist:estimate_params', 'nei
 ataui = -ataui/log(dampth); btaui = -btaui/log(dampth);
 ataue = -ataue/log(dampth); btaue = -btaue/log(dampth);
 dampth = exp(1);
-%
-% Take zscore of RW data to fulfill assumptions of model error/noise structure
+%%% Take zscore of RW data to fulfill assumptions of model error/noise structure
 RW = zscore(RW);
-%
-% Compute soil moisture:
-Mmax =.76; % maximum soil moisture; v/v
-Mmin =.01; % minimum soil moisture; v/v
-muth = 5.8; % mu from thornthwaite's Ep scheme
-mth = 4.886; % m from thornthwaite's Ep scheme
-alpha = .093;
-Minit = 200; % initial value for soil moisture; v/v
-dr = 1000; % root depth
-%
 Nyrs = size(T,2);
-%
-% Read in or compute estimate of soil moisture M:
-if isempty(M)
-    % then estimate soil moisture from T and P inputs via Leaky Bucket:
-    if substep == 1
-        M = leakybucket_submonthly(1:Nyrs,phi,T,P,Mmax,Mmin,alpha,mth,muth,dr,Minit/dr);
-    elseif substep == 0
-        M = leakybucket_monthly(1:Nyrs,phi,T,P,Mmax,Mmin,alpha,mth,muth,dr,Minit/dr);
-    end
-end
-% Compute monthly growth response to insolation, gE:
-if isempty(gE)
-    gE = Compute_gE(phi);
-end
-%
 %%%% Now do the MCMC sampling: %%%%%%%%%%%%%
 if ~cT1; Ttchains = NaN(nsamp+nbi, nchain); Ttensemb = NaN(1, nsamp*nchain); end
 if ~cT2; Tochains = NaN(nsamp+nbi, nchain); Toensemb = NaN(1, nsamp*nchain); end
@@ -239,7 +213,7 @@ for chain = 1:nchain
     sim = 1;
     %
     % Initialize growth response parameters:
-    paramscurr = struct('T',T,'M',M,'phi',phi,'gE',gE,'D',D,'intwindow',intwindow,'dampth',dampth);
+    paramscurr = struct('T',T,'P',P,'phi',phi,'D',D,'intwindow',intwindow,'dampth',dampth,'substep',substep);
     Tt(sim)   = unifrnd(aT1,bT1);     paramscurr.T1   = Tt(sim);     if cT1;   Tt(:)   = Tt(sim);   end
     To(sim)   = unifrnd(aT2,bT2);     paramscurr.T2   = To(sim);     if cT2;   To(:)   = To(sim);   end
     Mt(sim)   = unifrnd(aM1,bM1);     paramscurr.M1   = Mt(sim);     if cM1;   Mt(:)   = Mt(sim);   end
@@ -274,20 +248,34 @@ for chain = 1:nchain
         % hold current values of error model parameters:
         errorpars(1) = phi1(1); errorpars(2) = tau2(1);
     end
-    %
-    paramscurr.gcurr = call_VSLiteHist(1:Nyrs,paramscurr);
+    %%% Calculate the first simulation. Save the middle parameters for reuse.
+    paramscurr.M = [];
+    paramscurr.gE = [];
+    paramscurr.g0 = [];
+    paramscurr.gT = [];
+    paramscurr.gM = [];
+    paramscurr.eD = [];
+    paramscurr.gD = [];
+    [paramscurr.gcurr,details] = call_VSLiteHist(1:Nyrs,paramscurr);
+    paramscurr.M = details.M;
+    paramscurr.gE = details.gE;
+    paramscurr.g0 = details.g0;
+    paramscurr.gT = details.gT;
+    paramscurr.gM = details.gM;
+    paramscurr.eD = details.eD;
+    paramscurr.gD = details.gD;
     %
     while sim < nsamp+nbi+1
         % estimate each parameter using Gibbs method
-        if ~cT1;   [Tt(sim),paramscurr.gcurr]   = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.T1 = Tt(sim);
-        if ~cT2;   [To(sim),paramscurr.gcurr]   = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.T2 = To(sim);
-        if ~cM1;   [Mt(sim),paramscurr.gcurr]   = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.M1 = Mt(sim);
-        if ~cM2;   [Mo(sim),paramscurr.gcurr]   = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.M2 = Mo(sim);
-        if ~cD1;   [Dt(sim),paramscurr.gcurr]   = param_U_aux('D1',aD1,bD1,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.D1 = Dt(sim);
-        if ~cD2;   [Do(sim),paramscurr.gcurr]   = param_U_aux('D2',aD2,bD2,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.D2 = Do(sim);
-        if ~ctaui; [taui(sim),paramscurr.gcurr] = param_U_aux('taui',ataui,btaui,paramscurr,errorpars,RW,gparscalint); end; paramscurr.taui = taui(sim);
-        if ~ctaue; [taue(sim),paramscurr.gcurr] = param_U_aux('taue',ataue,btaue,paramscurr,errorpars,RW,gparscalint); end; paramscurr.taue = taue(sim);
-        if ~ceoi;  [eoi(sim),paramscurr.gcurr]  = param_U_aux('eoi',aeoi,beoi,paramscurr,errorpars,RW,gparscalint);    end; paramscurr.eoi = eoi(sim);
+        if ~cT1;   [Tt(sim),paramscurr.gcurr]   = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint,{'gT'});            end; paramscurr.T1 = Tt(sim);
+        if ~cT2;   [To(sim),paramscurr.gcurr]   = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint,{'gT'});            end; paramscurr.T2 = To(sim);
+        if ~cM1;   [Mt(sim),paramscurr.gcurr]   = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint,{'gM'});            end; paramscurr.M1 = Mt(sim);
+        if ~cM2;   [Mo(sim),paramscurr.gcurr]   = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint,{'gM'});            end; paramscurr.M2 = Mo(sim);
+        if ~cD1;   [Dt(sim),paramscurr.gcurr]   = param_U_aux('D1',aD1,bD1,paramscurr,errorpars,RW,gparscalint,{'gD'});            end; paramscurr.D1 = Dt(sim);
+        if ~cD2;   [Do(sim),paramscurr.gcurr]   = param_U_aux('D2',aD2,bD2,paramscurr,errorpars,RW,gparscalint,{'gD'});            end; paramscurr.D2 = Do(sim);
+        if ~ctaui; [taui(sim),paramscurr.gcurr] = param_U_aux('taui',ataui,btaui,paramscurr,errorpars,RW,gparscalint,{'gD','eD'}); end; paramscurr.taui = taui(sim);
+        if ~ctaue; [taue(sim),paramscurr.gcurr] = param_U_aux('taue',ataue,btaue,paramscurr,errorpars,RW,gparscalint,{'gD','eD'}); end; paramscurr.taue = taue(sim);
+        if ~ceoi;  [eoi(sim),paramscurr.gcurr]  = param_U_aux('eoi',aeoi,beoi,paramscurr,errorpars,RW,gparscalint,{'gD','eD'});    end; paramscurr.eoi = eoi(sim);
         % Now draw from error model parameters:
         if errormod == 0
             [errorpars,logLdata(sim)] = ...
@@ -402,12 +390,13 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%% CONDITIONAL PARAMETER SAMPLING SUBROUTINES %%%%%%%%%%%
-function [paramval,gval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,cyrs)
-%
+function [paramval,gval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,cyrs,excludeparams)
+if nargin < 8; excludeparams = {}; end
 if isfield(paramscurr, 'gcurr'); gcurr = paramscurr.gcurr;
 else; gcurr = call_VSLiteHist(cyrs,paramscurr);
 end
 paramsprop = paramscurr;
+for i = 1:length(excludeparams); paramsprop.(excludeparams{i}) = []; end
 paramsprop.(paramname) = unifrnd(boundlower,boundupper);
 gprop = call_VSLiteHist(cyrs,paramsprop);
 %
@@ -628,14 +617,18 @@ end
     
 end
 
-function [Gterms] = call_VSLiteHist(cyears, parameters)
-Gterms = VSLiteHist(cyears,...
+function [Gterms,details] = call_VSLiteHist(cyears, parameters)
+[Gterms,details] = VSLiteHist(cyears,...
     'T1',parameters.T1,'T2',parameters.T2,...
     'M1',parameters.M1,'M2',parameters.M2,...
     'D1',parameters.D1,'D2',parameters.D2,...
     'taui',parameters.taui,'taue',parameters.taue,...
-    'eoi',parameters.eoi,...
-    'T',parameters.T,'M',parameters.M,'D',parameters.D,...
-    'phi',parameters.phi,'dampth',parameters.dampth,...
-    'gE',parameters.gE,'intwindow',parameters.intwindow);
+    'eoi',parameters.eoi,'dampth',parameters.dampth,...
+    'T',parameters.T,'M',parameters.M,...
+    'P',parameters.P,'D',parameters.D,...
+    'phi',parameters.phi,...
+    'gE',parameters.gE,'g0',parameters.g0,...
+    'gT',parameters.gT,'gM',parameters.gM,...
+    'eD',parameters.eD,'gD',parameters.gD,...
+    'intwindow',parameters.intwindow,'substep',parameters.substep);
 end
