@@ -267,15 +267,15 @@ for chain = 1:nchain
     %
     while sim < nsamp+nbi+1
         % estimate each parameter using Gibbs method
-        if ~cT1;   [Tt(sim),paramscurr.gcurr]   = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint,{'gT'});            end; paramscurr.T1 = Tt(sim);
-        if ~cT2;   [To(sim),paramscurr.gcurr]   = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint,{'gT'});            end; paramscurr.T2 = To(sim);
-        if ~cM1;   [Mt(sim),paramscurr.gcurr]   = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint,{'gM'});            end; paramscurr.M1 = Mt(sim);
-        if ~cM2;   [Mo(sim),paramscurr.gcurr]   = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint,{'gM'});            end; paramscurr.M2 = Mo(sim);
-        if ~cD1;   [Dt(sim),paramscurr.gcurr]   = param_U_aux('D1',aD1,bD1,paramscurr,errorpars,RW,gparscalint,{'gD'});            end; paramscurr.D1 = Dt(sim);
-        if ~cD2;   [Do(sim),paramscurr.gcurr]   = param_U_aux('D2',aD2,bD2,paramscurr,errorpars,RW,gparscalint,{'gD'});            end; paramscurr.D2 = Do(sim);
-        if ~ctaui; [taui(sim),paramscurr.gcurr] = param_U_aux('taui',ataui,btaui,paramscurr,errorpars,RW,gparscalint,{'gD','eD'}); end; paramscurr.taui = taui(sim);
-        if ~ctaue; [taue(sim),paramscurr.gcurr] = param_U_aux('taue',ataue,btaue,paramscurr,errorpars,RW,gparscalint,{'gD','eD'}); end; paramscurr.taue = taue(sim);
-        if ~ceoi;  [eoi(sim),paramscurr.gcurr]  = param_U_aux('eoi',aeoi,beoi,paramscurr,errorpars,RW,gparscalint,{'gD','eD'});    end; paramscurr.eoi = eoi(sim);
+        if ~cT1;   [Tt(sim),   paramscurr] = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint,{'gT'});            end;
+        if ~cT2;   [To(sim),   paramscurr] = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint,{'gT'});            end;
+        if ~cM1;   [Mt(sim),   paramscurr] = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint,{'gM'});            end;
+        if ~cM2;   [Mo(sim),   paramscurr] = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint,{'gM'});            end;
+        if ~cD1;   [Dt(sim),   paramscurr] = param_U_aux('D1',aD1,bD1,paramscurr,errorpars,RW,gparscalint,{'gD'});            end;
+        if ~cD2;   [Do(sim),   paramscurr] = param_U_aux('D2',aD2,bD2,paramscurr,errorpars,RW,gparscalint,{'gD'});            end;
+        if ~ctaui; [taui(sim), paramscurr] = param_U_aux('taui',ataui,btaui,paramscurr,errorpars,RW,gparscalint,{'gD','eD'}); end;
+        if ~ctaue; [taue(sim), paramscurr] = param_U_aux('taue',ataue,btaue,paramscurr,errorpars,RW,gparscalint,{'gD','eD'}); end;
+        if ~ceoi;  [eoi(sim),  paramscurr] = param_U_aux('eoi',aeoi,beoi,paramscurr,errorpars,RW,gparscalint,{'gD','eD'});    end;
         % Now draw from error model parameters:
         if errormod == 0
             [errorpars,logLdata(sim)] = ...
@@ -390,15 +390,21 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%% CONDITIONAL PARAMETER SAMPLING SUBROUTINES %%%%%%%%%%%
-function [paramval,gval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,cyrs,excludeparams)
-if nargin < 8; excludeparams = {}; end
+function [retvalue,retparam] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,cyrs,recalcparams)
+% param_U_aux: Do a single step of Gibbs sampling.
+% Inputs:
+%   recalcparams: names of params that should be re-calculated when sampling from the proposal distributing
+% Outputs:
+%   retvalue: the sampled param value
+%   retparam: the new parameters struct that is acceptable by "call_VSLiteHist"
+if nargin < 8; recalcparams = {}; end
 if isfield(paramscurr, 'gcurr'); gcurr = paramscurr.gcurr;
 else; gcurr = call_VSLiteHist(cyrs,paramscurr);
 end
 paramsprop = paramscurr;
-for i = 1:length(excludeparams); paramsprop.(excludeparams{i}) = []; end
+for i = 1:length(recalcparams); paramsprop.(recalcparams{i}) = []; end
 paramsprop.(paramname) = unifrnd(boundlower,boundupper);
-gprop = call_VSLiteHist(cyrs,paramsprop);
+[gprop,detailsprop] = call_VSLiteHist(cyrs,paramsprop);
 %
 if length(errorpars) == 1 % White noise error model:
     sigma2rw = errorpars;
@@ -418,11 +424,15 @@ end
 
 % accept or reject the proposal.
 if binornd(1,min(HR,1))==1
-    paramval = paramsprop.(paramname);
-    gval = gprop;
+    % accept
+    retvalue = paramsprop.(paramname);
+    for i = 1:length(recalcparams); paramsprop.(recalcparams{i}) = detailsprop.(recalcparams{i}); end
+    paramsprop.gcurr = gprop;
+    retparam = paramsprop;
 else
-    paramval = paramscurr.(paramname);
-    gval = gcurr;
+    % reject
+    retvalue = paramscurr.(paramname);
+    retparam = paramscurr;
 end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
