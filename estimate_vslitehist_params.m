@@ -172,7 +172,7 @@ if isempty(P) && isempty(M); throw(MException('VSLiteHist:estimate_params', 'nei
 %%% convert taui&taue to natural exponential time scale
 ataui = -ataui/log(dampth); btaui = -btaui/log(dampth);
 ataue = -ataue/log(dampth); btaue = -btaue/log(dampth);
-damph = exp(1);
+dampth = exp(1);
 %
 % Take zscore of RW data to fulfill assumptions of model error/noise structure
 RW = zscore(RW);
@@ -275,29 +275,19 @@ for chain = 1:nchain
         errorpars(1) = phi1(1); errorpars(2) = tau2(1);
     end
     %
-    Gterms = call_VSLiteHist(1:Nyrs,paramscurr);
-    paramscurr.gcurr = Gterms;
+    paramscurr.gcurr = call_VSLiteHist(1:Nyrs,paramscurr);
     %
     while sim < nsamp+nbi+1
         % estimate each parameter using Gibbs method
-        if ~cT1; [Tt(sim),Gterms] = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.T1 = Tt(sim); paramscurr.gcurr = Gterms;
-        if ~cT2; [To(sim),Gterms] = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.T2 = To(sim); paramscurr.gcurr = Gterms;
-        if ~cM1; [Mt(sim),Gterms] = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.M1 = Mt(sim); paramscurr.gcurr = Gterms;
-        if ~cM2; [Mo(sim),Gterms] = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.M2 = Mo(sim); paramscurr.gcurr = Gterms;
-        if ~cD1; [Dt(sim),Gterms] = param_U_aux('D1',aD1,bD1,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.D1 = Dt(sim); paramscurr.gcurr = Gterms;
-        if ~cD2; [Do(sim),Gterms] = param_U_aux('D2',aD2,bD2,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.D2 = Do(sim); paramscurr.gcurr = Gterms;
-        if ~ctaui; [taui(sim),Gterms] = param_U_aux('taui',ataui,btaui,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.taui = taui(sim); paramscurr.gcurr = Gterms;
-        if ~ctaue; [taue(sim),Gterms] = param_U_aux('taue',ataue,btaue,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.taue = taue(sim); paramscurr.gcurr = Gterms;
-        if ~ceoi; [eoi(sim),Gterms] = param_U_aux('eoi',aeoi,beoi,paramscurr,errorpars,RW,gparscalint); end
-        paramscurr.eoi = eoi(sim); paramscurr.gcurr = Gterms;
+        if ~cT1;   [Tt(sim),paramscurr.gcurr]   = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.T1 = Tt(sim);
+        if ~cT2;   [To(sim),paramscurr.gcurr]   = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.T2 = To(sim);
+        if ~cM1;   [Mt(sim),paramscurr.gcurr]   = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.M1 = Mt(sim);
+        if ~cM2;   [Mo(sim),paramscurr.gcurr]   = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.M2 = Mo(sim);
+        if ~cD1;   [Dt(sim),paramscurr.gcurr]   = param_U_aux('D1',aD1,bD1,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.D1 = Dt(sim);
+        if ~cD2;   [Do(sim),paramscurr.gcurr]   = param_U_aux('D2',aD2,bD2,paramscurr,errorpars,RW,gparscalint);       end; paramscurr.D2 = Do(sim);
+        if ~ctaui; [taui(sim),paramscurr.gcurr] = param_U_aux('taui',ataui,btaui,paramscurr,errorpars,RW,gparscalint); end; paramscurr.taui = taui(sim);
+        if ~ctaue; [taue(sim),paramscurr.gcurr] = param_U_aux('taue',ataue,btaue,paramscurr,errorpars,RW,gparscalint); end; paramscurr.taue = taue(sim);
+        if ~ceoi;  [eoi(sim),paramscurr.gcurr]  = param_U_aux('eoi',aeoi,beoi,paramscurr,errorpars,RW,gparscalint);    end; paramscurr.eoi = eoi(sim);
         % Now draw from error model parameters:
         if errormod == 0
             [errorpars,logLdata(sim)] = ...
@@ -352,12 +342,12 @@ if ~cD2;   D2   = fconvgergent(Doensemb);   else; D2   = aD2;   end
 if ~ctaui; taui = fconvgergent(tauiensemb); else; taui = ataui; end
 if ~ctaue; taue = fconvgergent(taueensemb); else; taue = ataue; end
 if ~ceoi;  eoi  = fconvgergent(eoiensemb);  else; eoi  = aeoi;  end
-if errormod == 0
-    sig2rw = fconvgergent(sig2rwensemb);
-elseif errormod == 1
-    phi1hat = fconvgergent(phi1ensemb);
-    tau2hat = fconvgergent(tau2ensemb);
-end
+% if errormod == 0
+%     sig2rw = fconvgergent(sig2rwensemb);
+% elseif errormod == 1
+%     phi1hat = fconvgergent(phi1ensemb);
+%     tau2hat = fconvgergent(tau2ensemb);
+% end
 %
 Rhats = struct;
 if ~cT1;   RhatT1   = gelmanrubin92(nsamp,nbi,Ttchains);   Rhats.T1   = RhatT1;   end
@@ -381,9 +371,6 @@ nRhats = length(Rhatfields);
 Rhatvals = NaN(1,nRhats);
 for i = 1:nRhats; Rhatvals(i) = Rhats.(Rhatfields{i}); end
 if verbose == 1
-    heads = cell(1,nRhats);
-    vals = cell(1,nRhats);
-    headlengths = NaN(1,nRhats);
     texthead = '    Rhat for ';
     textvals = '             ';
     for i = 1:nRhats
@@ -391,11 +378,11 @@ if verbose == 1
         len = length(headitem);
         valitem = sprintf(['% ', num2str(len), 's'], sprintf('%1.4f', Rhatvals(i)));
         if i > 1
-            headitem = [' | ', headitem];
-            valitem = [' | ', valitem];
+            headitem = sprintf(' | %s', headitem);
+            valitem = sprintf(' | %s', valitem);
         end
-        texthead = [texthead, headitem];
-        textvals = [textvals, valitem];
+        texthead = sprintf('%s%s', texthead, headitem);
+        textvals = sprintf('%s%s', textvals, valitem);
     end
     disp(texthead);
     disp(textvals);
@@ -417,8 +404,8 @@ end
 %%%%%%%%% CONDITIONAL PARAMETER SAMPLING SUBROUTINES %%%%%%%%%%%
 function [paramval,gval] = param_U_aux(paramname,boundlower,boundupper,paramscurr,errorpars,RW,cyrs)
 %
-if isfield(paramscurr, 'gcurr'); gcurr = call_VSLiteHist(cyrs,paramscurr);
-else; gcurr = paramscurr.gcurr;
+if isfield(paramscurr, 'gcurr'); gcurr = paramscurr.gcurr;
+else; gcurr = call_VSLiteHist(cyrs,paramscurr);
 end
 paramsprop = paramscurr;
 paramsprop.(paramname) = unifrnd(boundlower,boundupper);
@@ -426,8 +413,8 @@ gprop = call_VSLiteHist(cyrs,paramsprop);
 %
 if length(errorpars) == 1 % White noise error model:
     sigma2rw = errorpars;
-    expcurr = sum((RW(cyrs)'-sqrt(1-sigma2rw)*gcurr).^2);
-    expprop = sum((RW(cyrs)'-sqrt(1-sigma2rw)*gprop).^2);
+    expcurr = sum((RW(cyrs)-sqrt(1-sigma2rw)*gcurr).^2);
+    expprop = sum((RW(cyrs)-sqrt(1-sigma2rw)*gprop).^2);
     HR = exp(-.5*(expprop-expcurr)/sigma2rw);
 elseif length(errorpars) == 2 % AR(1) error model:
     phi1 = errorpars(1); tau2 = errorpars(2);
@@ -435,8 +422,8 @@ elseif length(errorpars) == 2 % AR(1) error model:
     %
     [iSig] = makeAR1covmat(phi1,tau2,length(cyrs));
     %
-    logLprop = -.5*(RW(cyrs)'-sqrt(1-sigma2rw)*gprop)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*gprop);
-    logLcurr = -.5*(RW(cyrs)'-sqrt(1-sigma2rw)*gcurr)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*gcurr);
+    logLprop = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*gprop)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*gprop);
+    logLcurr = -.5*(RW(cyrs)-sqrt(1-sigma2rw)*gcurr)'*iSig*(RW(cyrs) - sqrt(1-sigma2rw)*gcurr);
     HR = exp(logLprop-logLcurr);
 end
 
@@ -457,8 +444,8 @@ function [sigma2rw,logLdata] = errormodel0_aux(sigma2rwcurr,paramscurr,RW,cyrs)
 % SETW 4/5/2013
 %
 %%%%%%%%%% account for variable integration window:
-if isfield(paramscurr, 'gcurr'); gcurr = call_VSLiteHist(cyrs,paramscurr);
-else; gcurr = paramscurr.gcurr;
+if isfield(paramscurr, 'gcurr'); gcurr = paramscurr.gcurr;
+else; gcurr = call_VSLiteHist(cyrs,paramscurr);
 end
 %%%%%%%%%%%%
 % % sample proposal from the prior:
@@ -472,8 +459,8 @@ sigma2rwprop = (unifrnd(0,1))^2;
 % accept or reject?
 Nyrs = length(cyrs);
 %
-logprop = -.5*sum((RW(cyrs)'-sqrt(1-sigma2rwprop)*gcurr).^2)/sigma2rwprop;
-logcurr = -.5*sum((RW(cyrs)'-sqrt(1-sigma2rwcurr)*gcurr).^2)/sigma2rwcurr;
+logprop = -.5*sum((RW(cyrs)-sqrt(1-sigma2rwprop)*gcurr).^2)/sigma2rwprop;
+logcurr = -.5*sum((RW(cyrs)-sqrt(1-sigma2rwcurr)*gcurr).^2)/sigma2rwcurr;
 HR = ((sigma2rwcurr/sigma2rwprop)^(Nyrs/2))*exp(logprop-logcurr);
 if binornd(1,min(HR,1))==1
     sigma2rw = sigma2rwprop;
@@ -484,15 +471,15 @@ else
 end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function [pars,logLdata] = errormodel1_aux(currpars,paramscurr,RW,T,M,phi,gE,intwindow,cyrs,varargin)
+function [pars,logLdata] = errormodel1_aux(currpars,paramscurr,RW,cyrs)
 % RW = vector of observed annual ring widths
 % Gterms = vector of terms that sum together to give the simulated raw ring with index for all
 % months (rows) and all years (columns)
 % SETW 4/5/2013
 %
 %%%%%%%%%% account for variable integration window:
-if isfield(paramscurr, 'gcurr'); gcurr = call_VSLiteHist(cyrs,paramscurr);
-else; gcurr = paramscurr.gcurr;
+if isfield(paramscurr, 'gcurr'); gcurr = paramscurr.gcurr;
+else; gcurr = call_VSLiteHist(cyrs,paramscurr);
 end
 %%%%%%%%%%%%
 % read current values of parameters:
@@ -535,8 +522,8 @@ Ny = length(cyrs);
 alphaprop = sqrt(1-tau2prop/(1-phi1prop^2));
 alphacurr = sqrt(1-tau2curr/(1-phi1curr^2));
 %
-logLprop = -.5*(RW(cyrs)'-alphaprop*gcurr)'*iSigprop*(RW(cyrs)'-alphaprop*gcurr);
-logLcurr = -.5*(RW(cyrs)'-alphacurr*gcurr)'*iSigcurr*(RW(cyrs)'-alphacurr*gcurr);
+logLprop = -.5*(RW(cyrs)-alphaprop*gcurr)'*iSigprop*(RW(cyrs)-alphaprop*gcurr);
+logLcurr = -.5*(RW(cyrs)-alphacurr*gcurr)'*iSigcurr*(RW(cyrs)-alphacurr*gcurr);
 HR = sqrt(detSigcurr/detSigprop)*exp(logLprop-logLcurr);
 
 if binornd(1,min(HR,1))==1

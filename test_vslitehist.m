@@ -41,8 +41,10 @@ save('vslitehist_params.mat', 'T1','T2','M1','M2','D1','D2','taui','taue','eoi')
 % load('vslitehist_params.mat');
 
 % Run VS-Lite.
-[trw,gT,gM,gE,gD,M] = VSLiteHist(syear:eyear,'phi',phi,'T',T,'P',P,'D',D,...
+[trw,details] = VSLiteHist(syear:eyear,'phi',phi,'T',T,'P',P,'D',D,...
     'T1',T1,'T2',T2,'M1',M1,'M2',M2,'D1',D1,'D2',D2,'taui',taui,'taue',taue,'eoi',eoi);
+gM = details.gM;
+gT = details.gT;
 % Draw some output.
 figure;
 set(gcf,'units','normalized','position',[.25 .25 .5 .4])
