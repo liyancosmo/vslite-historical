@@ -161,7 +161,7 @@ nchain = varargin.get('nchain', 3);
 [ataui, btaui, ctaui] = dealprior(varargin.get('tauipriorsupp', [0, 10]));
 [ataue, btaue, ctaue] = dealprior(varargin.get('tauepriorsupp', [100, 500]));
 [aeoi,  beoi,  ceoi]  = dealprior(varargin.get('eoipriorsupp',  [0, 1]));
-dampth = varargin.get('dampth', exp(1));
+dampth = varargin.get('dampth', exp(-1));
 convthresh = varargin.get('convthresh', .1);
 verbose = varargin.get('verbose', 1);
 %%% check input params %%%
@@ -172,7 +172,7 @@ if isempty(P) && isempty(M); throw(MException('VSLiteHist:estimate_params', 'nei
 %%% convert taui&taue to natural exponential time scale
 ataui = -ataui/log(dampth); btaui = -btaui/log(dampth);
 ataue = -ataue/log(dampth); btaue = -btaue/log(dampth);
-dampth = exp(1);
+dampth = exp(-1);
 %%% Take zscore of RW data to fulfill assumptions of model error/noise structure
 RW = zscore(RW);
 Nyrs = size(T,2);
@@ -256,7 +256,7 @@ for chain = 1:nchain
     paramscurr.gM = [];
     paramscurr.eD = [];
     paramscurr.gD = [];
-    [paramscurr.gcurr,details] = call_VSLiteHist(1:Nyrs,paramscurr);
+    [paramscurr.gcurr,details] = VSLiteHist(1:Nyrs,paramscurr);
     paramscurr.M = details.M;
     paramscurr.gE = details.gE;
     paramscurr.g0 = details.g0;
@@ -267,10 +267,10 @@ for chain = 1:nchain
     %
     while sim < nsamp+nbi+1
         % estimate each parameter using Gibbs method
-        if ~cT1;   [Tt(sim),   paramscurr] = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint,{'gT'});            end;
-        if ~cT2;   [To(sim),   paramscurr] = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint,{'gT'});            end;
-        if ~cM1;   [Mt(sim),   paramscurr] = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint,{'gM'});            end;
-        if ~cM2;   [Mo(sim),   paramscurr] = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint,{'gM'});            end;
+        if ~cT1;   [Tt(sim),   paramscurr] = param_U_aux('T1',aT1,bT1,paramscurr,errorpars,RW,gparscalint,{'g0','gT'});       end;
+        if ~cT2;   [To(sim),   paramscurr] = param_U_aux('T2',aT2,bT2,paramscurr,errorpars,RW,gparscalint,{'g0','gT'});       end;
+        if ~cM1;   [Mt(sim),   paramscurr] = param_U_aux('M1',aM1,bM1,paramscurr,errorpars,RW,gparscalint,{'g0','gM'});       end;
+        if ~cM2;   [Mo(sim),   paramscurr] = param_U_aux('M2',aM2,bM2,paramscurr,errorpars,RW,gparscalint,{'g0','gM'});       end;
         if ~cD1;   [Dt(sim),   paramscurr] = param_U_aux('D1',aD1,bD1,paramscurr,errorpars,RW,gparscalint,{'gD'});            end;
         if ~cD2;   [Do(sim),   paramscurr] = param_U_aux('D2',aD2,bD2,paramscurr,errorpars,RW,gparscalint,{'gD'});            end;
         if ~ctaui; [taui(sim), paramscurr] = param_U_aux('taui',ataui,btaui,paramscurr,errorpars,RW,gparscalint,{'gD','eD'}); end;
@@ -396,15 +396,15 @@ function [retvalue,retparam] = param_U_aux(paramname,boundlower,boundupper,param
 %   recalcparams: names of params that should be re-calculated when sampling from the proposal distributing
 % Outputs:
 %   retvalue: the sampled param value
-%   retparam: the new parameters struct that is acceptable by "call_VSLiteHist"
+%   retparam: the new parameters struct that is acceptable by "VSLiteHist"
 if nargin < 8; recalcparams = {}; end
 if isfield(paramscurr, 'gcurr'); gcurr = paramscurr.gcurr;
-else; gcurr = call_VSLiteHist(cyrs,paramscurr);
+else; gcurr = VSLiteHist(cyrs,paramscurr);
 end
 paramsprop = paramscurr;
 for i = 1:length(recalcparams); paramsprop.(recalcparams{i}) = []; end
 paramsprop.(paramname) = unifrnd(boundlower,boundupper);
-[gprop,detailsprop] = call_VSLiteHist(cyrs,paramsprop);
+[gprop,detailsprop] = VSLiteHist(cyrs,paramsprop);
 %
 if length(errorpars) == 1 % White noise error model:
     sigma2rw = errorpars;
@@ -432,6 +432,7 @@ if binornd(1,min(HR,1))==1
 else
     % reject
     retvalue = paramscurr.(paramname);
+    paramsprop.gcurr = gcurr;
     retparam = paramscurr;
 end
 end
@@ -444,7 +445,7 @@ function [sigma2rw,logLdata] = errormodel0_aux(sigma2rwcurr,paramscurr,RW,cyrs)
 %
 %%%%%%%%%% account for variable integration window:
 if isfield(paramscurr, 'gcurr'); gcurr = paramscurr.gcurr;
-else; gcurr = call_VSLiteHist(cyrs,paramscurr);
+else; gcurr = VSLiteHist(cyrs,paramscurr);
 end
 %%%%%%%%%%%%
 % % sample proposal from the prior:
@@ -478,7 +479,7 @@ function [pars,logLdata] = errormodel1_aux(currpars,paramscurr,RW,cyrs)
 %
 %%%%%%%%%% account for variable integration window:
 if isfield(paramscurr, 'gcurr'); gcurr = paramscurr.gcurr;
-else; gcurr = call_VSLiteHist(cyrs,paramscurr);
+else; gcurr = VSLiteHist(cyrs,paramscurr);
 end
 %%%%%%%%%%%%
 % read current values of parameters:
@@ -625,20 +626,4 @@ else
     throw(MException('VSLiteHist:estimate_prior', 'prior must be a scalar or a 2D vector'));
 end
     
-end
-
-function [Gterms,details] = call_VSLiteHist(cyears, parameters)
-[Gterms,details] = VSLiteHist(cyears,...
-    'T1',parameters.T1,'T2',parameters.T2,...
-    'M1',parameters.M1,'M2',parameters.M2,...
-    'D1',parameters.D1,'D2',parameters.D2,...
-    'taui',parameters.taui,'taue',parameters.taue,...
-    'eoi',parameters.eoi,'dampth',parameters.dampth,...
-    'T',parameters.T,'M',parameters.M,...
-    'P',parameters.P,'D',parameters.D,...
-    'phi',parameters.phi,...
-    'gE',parameters.gE,'g0',parameters.g0,...
-    'gT',parameters.gT,'gM',parameters.gM,...
-    'eD',parameters.eD,'gD',parameters.gD,...
-    'intwindow',parameters.intwindow,'substep',parameters.substep);
 end
