@@ -22,23 +22,29 @@ function varargout = test_vslitehist(site)
 % If user doesn't specify site, just run the first one.
 if nargin == 0; site = 1; end
 
-% load the test data:
-load vslite_testdata.mat
+% % load the test data:
+% load vslite_testdata.mat
+% 
+% % select climate and location data for the chosen test site:
+% T = m08clim(site).T;
+% P = m08clim(site).P;
+% phi = sitecoords(site,1);
+% D = zeros(1,size(T,2));
 
-% select climate and location data for the chosen test site:
-T = m08clim(site).T;
-P = m08clim(site).P;
-phi = sitecoords(site,1);
-D = zeros(1,size(T,2));
+% get data
+filename = uigetfile('*.xlsx;*.xls');
+[RW,T,P,D] = read_data(filename);
+phi = inputdlg('Input the latitute:');
+phi = str2double(phi{1});
 
 % estimate the climate response parameters:
 disp('Performing Bayesian estimation of VS-Lite parameters for chosen site.')
 tic;
-% [T1,T2,M1,M2,D1,D2,taui,taue,eoi] = estimate_vslitehist_params(trw_obs(:,site)','T',T,'P',P,'D',D,'phi',phi,'nbi',500,'nsamp',5000,'gparpriors','uniform',...
+% [T1,T2,M1,M2,D1,D2,taui,taue,eoi] = estimate_vslitehist_params(RW,'T',T,'P',P,'D',D,'phi',phi,'nbi',200,'nsamp',2000,'gparpriors','uniform',...
 %     'D1priorsupp',-3,'D2priorsupp',1,'tauipriorsupp',5,'tauepriorsupp',100,'eoipriorsupp',1);
-[T1,T2,M1,M2,D1,D2,taui,taue,eoi] = estimate_vslitehist_params(trw_obs(:,site)','T',T,'P',P,'D',D,'phi',phi,'nbi',500,'nsamp',5000,'gparpriors','uniform');
+[T1,T2,M1,M2,D1,D2,taui,taue,eoi] = estimate_vslitehist_params(RW,'T',T,'P',P,'D',D,'phi',phi,'nbi',200,'nsamp',2000,'gparpriors','uniform');
 toc;
-save('vslitehist_params.mat', 'T1','T2','M1','M2','D1','D2','taui','taue','eoi');
+% save('vslitehist_params.mat', 'T1','T2','M1','M2','D1','D2','taui','taue','eoi');
 % load('vslitehist_params.mat');
 
 % Run VS-Lite.
