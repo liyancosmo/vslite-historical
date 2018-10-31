@@ -7,6 +7,7 @@ RW = NaN(1,ncols);
 T = NaN(12,ncols);
 P = NaN(12,ncols);
 D = NaN(1,ncols);
+phi = NaN;
 for i = 1:nrows
     rowhead = txt{i};
     if strcmpi(rowhead, 'Year')
