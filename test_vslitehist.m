@@ -33,7 +33,7 @@ if nargin == 0; site = 1; end
 
 % get data
 filename = uigetfile('*.xlsx;*.xls');
-[RW,T,P,D] = read_data(filename);
+[years,RW,T,P,D] = read_data(filename);
 phi = inputdlg('Input the latitute:');
 phi = str2double(phi{1});
 
