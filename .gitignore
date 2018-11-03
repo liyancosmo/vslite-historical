@@ -1,4 +1,6 @@
 *.asv
+vslitehist_inputs.mat
 vslitehist_params.mat
+vslitehist_results.mat
 ~$*.xls
 ~$*.xlsx

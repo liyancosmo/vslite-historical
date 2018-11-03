@@ -63,6 +63,8 @@ if choice <= 0; throw(MException('VSLiteHist:test', 'choice is not set')); end
 %%% standarize RW
 RW = zscore(RW);
 
+save('vslitehist_inputs.mat', 'years','RW','phi','T','P','D','choice');
+
 % estimate the climate response parameters:
 disp('Performing Bayesian estimation of VS-Lite parameters for chosen site.')
 tic;
@@ -74,64 +76,22 @@ elseif choice == 2
     [T1,T2,M1,M2,D1,D2,taui,taue,eoi] = estimate_vslitehist_params(RW,'T',T,'P',P,'D',D,'phi',phi,'nbi',200,'nsamp',2000,'gparpriors','uniform');
 end
 toc;
-% save('vslitehist_params.mat', 'T1','T2','M1','M2','D1','D2','taui','taue','eoi');
+save('vslitehist_params.mat', 'T1','T2','M1','M2','D1','D2','taui','taue','eoi');
 % load('vslitehist_params.mat');
 
 % Run VS-Lite.
 [trw,details] = VSLiteHist(years,struct('phi',phi,'T',T,'P',P,'D',D,...
     'T1',T1,'T2',T2,'M1',M1,'M2',M2,'D1',D1,'D2',D2,'taui',taui,'taue',taue,'eoi',eoi));
 
-% % Draw some output.
-% gM = details.gM;
-% gT = details.gT;
-% figure;
-% set(gcf,'units','normalized','position',[.25 .25 .5 .4])
-% if exist('worldmap')
-%     subplot(2,2,2);
-%     plot(mean(gM,2),'b--'); xlim([1 12]); hold on;
-%     plot(mean(gT,2),'r');
-%     title('Mean gT (red) and gM (blue)')
-%     subplot(2,2,1)
-%     worldmap([27 50],[-127 -65])
-%     load coast
-%     plotm(lat,long,'k')
-%     hold on; plotm(sitecoords(site,1),sitecoords(site,2),'*r','markersize',8)
-%     title('Site location')
-%     subplot(2,1,2);
-%     plot(syear:eyear,trw,'rx-'); hold on
-%     plot(syear:eyear,trw_obs(:,site),'kd-'); xlim([syear eyear]);
-%     eval(['title(''Simulated RW (red) and observed (black)'')']);
-%     ylim([min(min(trw),min(trw_obs(:,site))) max(max(trw),max(trw_obs(:,site)))]);
-% elseif exist('m_proj')
-%     subplot(2,2,2);
-%     plot(mean(gM,2),'b--'); xlim([1 12]); hold on;
-%     plot(mean(gT,2),'r');
-%     title('Mean gT (red) and gM (blue)')
-%     subplot(2,2,1)
-%     m_proj('Equidistant Cylindrical','longitude',[-127 -65],'latitude',[27 50])
-%     m_coast('color','k')
-%     m_grid
-%     m_line(sitecoords(site,2),sitecoords(site,1),'marker','*','color','r','markersize',8)
-%     title('Site location')
-%     subplot(2,1,2);
-%     plot(syear:eyear,trw,'rx-'); hold on
-%     plot(syear:eyear,trw_obs(:,site),'kd-'); xlim([syear eyear]);
-%     eval(['title(''Simulated RW (red) and observed (black)'')']);
-%     ylim([min(min(trw),min(trw_obs(:,site))) max(max(trw),max(trw_obs(:,site)))]);
-% else
-%     subplot(2,1,1);
-%     plot(mean(gM,2),'b--'); xlim([1 12]); hold on;
-%     plot(mean(gT,2),'r');
-%     title('Mean gT (red) and gM (blue)')
-%     subplot(2,1,2);
-%     plot(syear:eyear,trw,'rx-'); hold on
-%     plot(syear:eyear,trw_obs(:,site),'kd-'); xlim([syear eyear]);
-%     eval(['title(''Simulated RW (red) and observed (black)'')']);
-% end
+rsqr = sum((trw-RW).^2);
+
+fprintf('R^2 = %f\n', rsqr);
+
+save('vslitehist_results.mat', 'trw', 'details', 'rsqr');
 
 if isempty(outputfile);
     [outputfile,outputfilepath] = uiputfile('*.xlsx;*.xls', 'Save the output data');
-    outputfile = fullfile(outputfilepath,outputfile);
+    if outputfile; outputfile = fullfile(outputfilepath,outputfile); else outputfile = []; end
 end
 if ~isempty(outputfile); write_data(outputfile,years,RW,trw,phi,T,P,D); end
 
@@ -150,5 +110,7 @@ end
 if nargout > 0 
    varargout{1} = trw;
    varargout{2} = details;
+   varargout{3} = rsqr;
 end
+
     
