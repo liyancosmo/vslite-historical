@@ -38,7 +38,8 @@ doplot = varargin.get('doplot',true);
 
 %%% get data and choice
 if isempty(inputfile)
-    inputfile = uigetfile('*.xlsx;*.xls', 'Select the input data');
+    [inputfile,inputfilepath] = uigetfile('*.xlsx;*.xls', 'Select the input data');
+    inputfile = fullfile(inputfilepath,inputfile);
     [years,RW,phi,T,P,D] = read_data(inputfile);
     % phi = inputdlg('Input the latitute:');
     % phi = str2double(phi{1});
@@ -128,7 +129,10 @@ toc;
 %     eval(['title(''Simulated RW (red) and observed (black)'')']);
 % end
 
-if isempty(outputfile); outputfile = uiputfile('*.xlsx;*.xls', 'Save the output data'); end
+if isempty(outputfile);
+    [outputfile,outputfilepath] = uiputfile('*.xlsx;*.xls', 'Save the output data');
+    outputfile = fullfile(outputfilepath,outputfile);
+end
 if ~isempty(outputfile); write_data(outputfile,years,RW,trw,phi,T,P,D); end
 
 % Draw only plots
